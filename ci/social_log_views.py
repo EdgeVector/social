@@ -2,16 +2,12 @@
 
 from concurrent.futures import ThreadPoolExecutor
 import json
-from pathlib import Path
-import sys
 import time
 import urllib.error
 import urllib.request
 
-from support import OperationError, decode_json, dev_endpoint, require
-
-sys.path.append(str(Path(__file__).resolve().parents[1] / "mutation_log_load"))
 from node_auth import NodeKey, authorization
+from support import OperationError, decode_json, dev_endpoint, require
 
 ROOT = "/api/cloud/backups/v2"
 

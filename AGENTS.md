@@ -22,12 +22,15 @@ moved here from `EdgeVector/lastdb` (`apps/social`) on 2026-11-16.
   nightly, connect them to the DEV cloud, and drive this commit's `social`
   command. A change that alters command output or behaviour must update
   the recipes in the same PR.
-- `ci/` imports LastDB's generic node helpers (`support`, `node`,
-  `programs`, `harness`, `node_auth`) from a checkout of `EdgeVector/lastdb`
-  at the nightly's source commit. Do not copy them here. `ci/social_sdk.mjs`
-  exercises the Social adapter of the LastDB app SDK built from that same
-  checkout, so a renamed command needs the SDK change in a LastDB nightly
-  before these runs pass.
+- `ci/lib/` holds the node helpers the recipes need (`support`, `node`,
+  `harness`, `node_auth`, the BIP39 word list). They were carried from
+  LastDB's scripts and belong to this repo now: they use only the LastDB
+  binaries' CLI and socket, so fix them here when a LastDB release changes
+  that behaviour. Two things still come from `EdgeVector/lastdb`:
+  `lastdb_node/environments.json` at the nightly's source commit (the
+  endpoint profile of the build under test), and the app SDK, built from
+  LastDB main, whose Social adapter `ci/social_sdk.mjs` exercises. A renamed
+  command needs the matching SDK change merged in LastDB first.
 - Preserve whole-database sharing: two logs, the signed per-database roster,
   schema write grants, and the publisher approving each mutation. Read
   [the sharing design](https://github.com/EdgeVector/lastdb/blob/main/docs/designs/shared-database-mutation-logs.md#requirements-to-preserve)

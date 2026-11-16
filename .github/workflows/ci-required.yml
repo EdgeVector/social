@@ -26,7 +26,7 @@ jobs:
         env:
           PYTHONPYCACHEPREFIX: ${{ runner.temp }}/pycache
         run: |
-          python3 -m py_compile src/*.py src/social ci/*.py
+          python3 -m py_compile src/*.py src/social ci/*.py ci/lib/*.py
           node --check ci/social_sdk.mjs
       - name: Manifest and setup definitions
         run: |

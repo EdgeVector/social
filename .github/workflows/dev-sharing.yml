@@ -3,9 +3,9 @@ name: DEV sharing
 # Real sharing checks for Social. Each mode starts two fresh LastDB nodes on
 # the runner (a publisher and a recipient), connects them to the DEV cloud, and
 # drives this commit's `social` command through a published LastDB nightly.
-# The recipes are in ci/. They import LastDB's generic node helpers from a
-# checkout of EdgeVector/lastdb at the exact source commit of that nightly, so
-# the helpers always match the binaries.
+# The recipes are in ci/ and their node helpers in ci/lib/. A checkout of
+# EdgeVector/lastdb at the nightly's exact source commit supplies only the
+# compiled endpoint profile, lastdb_node/environments.json.
 # The app SDK, whose Social adapter calls these commands, is built from LastDB main.
 #
 # Cloud steps run only on main. A pull request gets the syntax job and never
@@ -62,7 +62,7 @@ jobs:
         env:
           PYTHONPYCACHEPREFIX: ${{ runner.temp }}/pycache
         run: |
-          python3 -m py_compile ci/*.py
+          python3 -m py_compile ci/*.py ci/lib/*.py
           node --check ci/social_sdk.mjs
       - name: Select the modes
         id: modes
@@ -152,18 +152,14 @@ jobs:
           GIT_TERMINAL_PROMPT: "0"
         run: |
           set -euo pipefail
-          # LastDB is public. Clone it with no credentials. Its scripts supply
-          # the node helpers, the compiled DEV endpoints and the SDK source.
+          # LastDB is public. Clone it with no credentials. It supplies the
+          # compiled DEV endpoints of this build and, from main, the SDK source.
           source="$RUNNER_TEMP/lastdb-source"
           env -u GH_TOKEN -u GITHUB_TOKEN git clone --no-checkout --filter=blob:none \
             https://github.com/EdgeVector/lastdb.git "$source"
           git -C "$source" checkout --detach "$LASTDB_SOURCE_COMMIT"
           test "$(git -C "$source" rev-parse HEAD)" = "$LASTDB_SOURCE_COMMIT"
-          for helper in scripts/harness.py scripts/cloud_backup/support.py scripts/cloud_backup/node.py \
-              scripts/cloud_backup/programs.py scripts/mutation_log_load/node_auth.py \
-              lastdb_node/environments.json; do
-            test -f "$source/$helper"
-          done
+          test -f "$source/lastdb_node/environments.json"
           printf 'LASTDB_SOURCE=%s\n' "$source" >> "$GITHUB_ENV"
       - name: Build the LastDB app SDK for the Social adapter
         if: matrix.mode != 'social-prepare'
@@ -205,5 +201,5 @@ jobs:
             social-prepare) recipe=social_prepare ;;
             *) exit 2 ;;
           esac
-          export PYTHONPATH="$LASTDB_SOURCE/scripts/cloud_backup:$LASTDB_SOURCE/scripts/mutation_log_load"
+          export PYTHONPATH="$GITHUB_WORKSPACE/ci/lib"
           python3 "ci/$recipe.py" --bin-dir "$LASTDB_BIN" --version "$LASTDB_VERSION"

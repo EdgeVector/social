@@ -225,7 +225,9 @@ connects them to the DEV cloud, and drives this commit's `social` command:
 | `social-circles` | Circles with per-database write scopes, allowed and refused writes, app sharing requests, grants changed outside Social, direct grant, revoke and restore |
 | `social-prepare` | The manifest and schemas produce a valid unsigned registry declaration for this commit on a fresh node |
 
-The recipes are in `ci/`. They import LastDB's generic node helpers from a
-checkout of `EdgeVector/lastdb` at the nightly's exact source commit, and they
-exercise the Social adapter of the LastDB app SDK built from that checkout.
+The recipes are in `ci/`, and the node helpers they use are in `ci/lib/`.
+Two things come from `EdgeVector/lastdb`: the endpoint profile
+`lastdb_node/environments.json` at the nightly's exact source commit, and the
+LastDB app SDK, built from LastDB main, whose Social adapter the recipes
+exercise.
 Pass `lastdb_release` to a manual run to use a specific nightly tag.
