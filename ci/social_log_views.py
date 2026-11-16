@@ -5,6 +5,7 @@ import json
 import time
 import urllib.error
 import urllib.request
+import uuid
 
 from node_auth import NodeKey, authorization
 from support import OperationError, decode_json, dev_endpoint, require
@@ -36,8 +37,13 @@ def post(path, data, authentication, *, expect_denial=False):
 
 
 def scope_for(publisher, api_key):
-    body = json.dumps({"version": 2, "account_id": publisher.account}).encode()
-    scope = post(ROOT + "/context/read", body, {"X-API-Key": api_key.decode("ascii")})["scope"]
+    key = NodeKey.from_seed((publisher.home / "identity.key").read_bytes())
+    path = f"{ROOT}/mutation-log/blob/bytes"
+    body = json.dumps({"action": "context", "account_id": publisher.account}).encode()
+    header, _ = authorization(key, path, str(uuid.uuid4()), time.time_ns() // 1_000_000, body,
+                              "0", account=publisher.account)
+    headers = {"Authorization": header, "X-API-Key": api_key.decode("ascii")}
+    scope = post(path, body, headers)["scope"]
     require(scope["account_id"] == publisher.account, "circle_cloud_publisher_scope")
     return scope
 
