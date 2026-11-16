@@ -206,8 +206,9 @@ selected ID with the normal LastDB data API and sends that value in
 `X-LastDB-Database-Session`. Keep the session out of logs. The node limits a
 session to the selected database and its approved operation.
 
-The TypeScript [LastDB app SDK](https://github.com/EdgeVector/lastdb/blob/main/lastdb_app_sdk/README.md#set-up-sharing-with-social)
-exposes `socialClient`, which runs these commands.
+JavaScript and TypeScript apps use [`@lastdb/social-client`](client/README.md)
+in `client/`. Its `socialClient` runs these commands and checks their output.
+It ships with Social, so it always matches the installed commands.
 
 ## How Social is checked
 
@@ -228,7 +229,8 @@ connects them to the DEV cloud, and drives this commit's `social` command:
 
 The recipes are in `ci/`, and the node helpers they use are in `ci/lib/`.
 Two things come from `EdgeVector/lastdb`: the endpoint profile
-`lastdb_node/environments.json` at the nightly's exact source commit, and the
-LastDB app SDK, built from LastDB main, whose Social adapter the recipes
-exercise.
+`lastdb_node/environments.json` and the LastDB app SDK's data client, which
+`ci/social_sdk.mjs` uses to read shared records. Both are taken at the
+nightly's exact source commit. The Social client the recipes exercise is this
+repo's `client/`.
 Pass `lastdb_release` to a manual run to use a specific nightly tag.

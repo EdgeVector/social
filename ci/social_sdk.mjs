@@ -1,11 +1,18 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 
-import { connect, socialClient } from './package/dist/index.js';
+import { socialClient } from '../client/index.mjs';
 
 const [action, socialPath, , dataDir, , lastdbPath] = process.argv.slice(2);
 const social = socialClient({ dataDir, socialPath, lastdbPath });
 const input = JSON.parse(readFileSync(0, 'utf8'));
+
+// Content reads use the LastDB app SDK built from the source of the build under test.
+async function connect(options) {
+  const sdk = await import(pathToFileURL(join(process.env.LASTDB_APP_SDK, 'dist', 'index.js')).href);
+  return sdk.connect(options);
+}
 
 try {
   let result;

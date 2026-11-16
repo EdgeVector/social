@@ -31,8 +31,11 @@ def command(node):
 
 
 def sdk(node, action, **body):
+    # The Social client is this checkout's. LASTDB_APP_SDK holds the packed LastDB data client.
+    require(Path(node.programs.environment.get("LASTDB_APP_SDK", ""), "dist/index.js").is_file(),
+            "lastdb_app_sdk_missing")
     result = subprocess.run(
-        ["node", os.environ["SOCIAL_SDK_OPERATION"], action, *command(node)],
+        ["node", str(ROOT / "ci/social_sdk.mjs"), action, *command(node)],
         input=json.dumps(body).encode(), capture_output=True, env=node.programs.environment, timeout=190,
     )
     require(result.returncode == 0, f"social_sdk_{action}")

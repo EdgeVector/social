@@ -28,10 +28,14 @@ jobs:
         run: |
           python3 -m py_compile src/*.py src/social ci/*.py ci/lib/*.py
           node --check ci/social_sdk.mjs
+          node --check client/index.mjs
       - name: Manifest and setup definitions
         run: |
           set -euo pipefail
-          for file in lastdb-app.json setups/*/*.json; do python3 -m json.tool "$file" > /dev/null; done
+          for file in lastdb-app.json client/package.json setups/*/*.json; do python3 -m json.tool "$file" > /dev/null; done
+          # The client ships with Social, so the two carry one version.
+          version() { python3 -c 'import json, sys; print(json.load(open(sys.argv[1]))["version"])' "$1"; }
+          test "$(version client/package.json)" = "$(version lastdb-app.json)"
           entrypoint="$(python3 -c 'import json; print(json.load(open("lastdb-app.json"))["run"]["entrypoint"])')"
           test -x "$entrypoint"
       - name: Command grammar

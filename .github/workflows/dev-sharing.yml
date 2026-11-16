@@ -4,9 +4,9 @@ name: DEV sharing
 # the runner (a publisher and a recipient), connects them to the DEV cloud, and
 # drives this commit's `social` command through a published LastDB nightly.
 # The recipes are in ci/ and their node helpers in ci/lib/. A checkout of
-# EdgeVector/lastdb at the nightly's exact source commit supplies only the
-# compiled endpoint profile, lastdb_node/environments.json.
-# The app SDK, whose Social adapter calls these commands, is built from LastDB main.
+# EdgeVector/lastdb at the nightly's exact source commit supplies the compiled
+# endpoint profile, lastdb_node/environments.json, and the app SDK's data
+# client for reading shared records. The Social client under test is client/.
 #
 # Cloud steps run only on main. A pull request gets the syntax job and never
 # receives cloud credentials.
@@ -157,7 +157,7 @@ jobs:
         run: |
           set -euo pipefail
           # LastDB is public. Clone it with no credentials. It supplies the
-          # compiled DEV endpoints of this build and, from main, the SDK source.
+          # compiled DEV endpoints and the app SDK source of this build.
           source="$RUNNER_TEMP/lastdb-source"
           env -u GH_TOKEN -u GITHUB_TOKEN git clone --no-checkout --filter=blob:none \
             https://github.com/EdgeVector/lastdb.git "$source"
@@ -165,26 +165,21 @@ jobs:
           test "$(git -C "$source" rev-parse HEAD)" = "$LASTDB_SOURCE_COMMIT"
           test -f "$source/lastdb_node/environments.json"
           printf 'LASTDB_SOURCE=%s\n' "$source" >> "$GITHUB_ENV"
-      - name: Build the LastDB app SDK for the Social adapter
+      - name: Build the LastDB app SDK for content reads
         if: matrix.mode != 'social-prepare'
-        env:
-          GIT_TERMINAL_PROMPT: "0"
         run: |
           set -euo pipefail
-          # The SDK's Social adapter calls this repo's commands, so it has to be
-          # the current adapter. Build it from LastDB main. The nightly's source
-          # can be older than a Social command change.
-          sdk="$RUNNER_TEMP/lastdb-sdk-source"
-          env -u GH_TOKEN -u GITHUB_TOKEN git -C "$LASTDB_SOURCE" worktree add --detach "$sdk" origin/main
-          printf '\nLastDB SDK source: `%s`\n' "$(git -C "$sdk" rev-parse HEAD)" >> "$GITHUB_STEP_SUMMARY"
-          cd "$sdk/lastdb_app_sdk"
+          # ci/social_sdk.mjs uses this repo's Social client. It needs the LastDB
+          # data client only to read shared records, so build that from the
+          # source of the build under test.
+          cd "$LASTDB_SOURCE/lastdb_app_sdk"
           npm ci
           npm run build
           npm pack --ignore-scripts --pack-destination "$RUNNER_TEMP"
-          mkdir -m 700 "$RUNNER_TEMP/social-sdk"
-          tar -xzf "$RUNNER_TEMP"/lastdb-app-sdk-*.tgz -C "$RUNNER_TEMP/social-sdk"
-          cp "$GITHUB_WORKSPACE/ci/social_sdk.mjs" "$RUNNER_TEMP/social-sdk/exercise.mjs"
-          printf 'SOCIAL_SDK_OPERATION=%s/social-sdk/exercise.mjs\n' "$RUNNER_TEMP" >> "$GITHUB_ENV"
+          mkdir -m 700 "$RUNNER_TEMP/lastdb-app-sdk"
+          tar -xzf "$RUNNER_TEMP"/lastdb-app-sdk-*.tgz -C "$RUNNER_TEMP/lastdb-app-sdk"
+          test -f "$RUNNER_TEMP/lastdb-app-sdk/package/dist/index.js"
+          printf 'LASTDB_APP_SDK=%s/lastdb-app-sdk/package\n' "$RUNNER_TEMP" >> "$GITHUB_ENV"
       - name: Install the signed log read tool dependency
         if: matrix.mode == 'social-circles'
         run: python3 -m pip install --quiet cryptography==41.0.7

@@ -32,10 +32,15 @@ moved here from `EdgeVector/lastdb` (`apps/social`) on 2026-11-16.
   LastDB's scripts and belong to this repo now: they use only the LastDB
   binaries' CLI and socket, so fix them here when a LastDB release changes
   that behaviour. Two things still come from `EdgeVector/lastdb`:
-  `lastdb_node/environments.json` at the nightly's source commit (the
-  endpoint profile of the build under test), and the app SDK, built from
-  LastDB main, whose Social adapter `ci/social_sdk.mjs` exercises. A renamed
-  command needs the matching SDK change merged in LastDB first.
+  `lastdb_node/environments.json` (the endpoint profile of the build under
+  test) and the app SDK's data client, which `ci/social_sdk.mjs` uses to
+  read shared records. Both are taken at the nightly's source commit.
+- `client/` is `@lastdb/social-client`, the JavaScript wrapper around the
+  `social` command: plain ESM, no build step, no dependencies, types in
+  `index.d.ts`. It replaced the Social adapter that lived in
+  `@lastdb/app-sdk`. When a command's name, flags or JSON output change,
+  change `client/` in the same commit; `ci/social_sdk.mjs` exercises it.
+  Keep `client/package.json`'s version equal to `lastdb-app.json`'s.
 - Preserve whole-database sharing: two logs, the signed per-database roster,
   schema write grants, and the publisher approving each mutation. Read
   [the sharing design](https://github.com/EdgeVector/lastdb/blob/main/docs/designs/shared-database-mutation-logs.md#requirements-to-preserve)
