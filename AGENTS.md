@@ -23,6 +23,10 @@ moved here from `EdgeVector/lastdb` (`apps/social`) on 2026-11-16.
   nightly, connect them to the DEV cloud, and drive this commit's `social`
   command. A change that alters command output or behaviour must update
   the recipes in the same PR.
+- A registry listing is tied to one exact LastDB API version. `social-prepare`
+  fails with `social_dev_listing_missing_for_api` when the DEV `next` list has
+  no Social entry for the nightly's API version. The fix is to republish, not
+  to change the recipe.
 - `ci/lib/` holds the node helpers the recipes need (`support`, `node`,
   `harness`, `node_auth`, the BIP39 word list). They were carried from
   LastDB's scripts and belong to this repo now: they use only the LastDB
