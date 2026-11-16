@@ -1,0 +1,76 @@
+name: ci-required
+
+# Gate of record for EdgeVector/social. CI runs no tests (Tom, 2026-10-09).
+# `check` covers syntax, the manifest and the command grammar. The sharing
+# flow itself is proven by the Social DEV runs in EdgeVector/lastdb, which
+# clone this repo at the commit pinned in scripts/cloud_backup/social.rev.
+# The final job `ci-required` is the protected status name. Keep it verbatim.
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: check
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+      - name: Python syntax
+        run: python3 -m py_compile src/*.py src/social
+      - name: Manifest and setup definitions
+        run: |
+          set -euo pipefail
+          for file in lastdb-app.json setups/*/*.json; do python3 -m json.tool "$file" > /dev/null; done
+          entrypoint="$(python3 -c 'import json; print(json.load(open("lastdb-app.json"))["run"]["entrypoint"])')"
+          test -x "$entrypoint"
+      - name: Command grammar
+        run: |
+          set -euo pipefail
+          python3 -B src/social --help > /dev/null
+          for noun in person circle db grant request; do python3 -B src/social "$noun" --help > /dev/null; done
+
+  diff_file_size:
+    name: Changed-file size lint
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - name: Enforce source diff size and allow policy
+        uses: EdgeVector/.github/source-diff-policy@f250aa7f93f92e9d6876fbedbb097a7c5e145f95
+        with:
+          base: ${{ github.event.pull_request.base.sha || '' }}
+          head: ${{ github.event.pull_request.head.sha || github.sha }}
+          extensions: .py
+
+  secret_scan:
+    name: secret scan
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - name: Scan tracked text files for secrets
+        uses: EdgeVector/.github/secret-scan@f250aa7f93f92e9d6876fbedbb097a7c5e145f95
+
+  ci-required:
+    name: ci-required
+    if: ${{ always() }}
+    needs: [check, diff_file_size, secret_scan]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Require every needed job to succeed
+        env:
+          RESULTS: ${{ join(needs.*.result, ',') }}
+        run: |
+          echo "Required job results: $RESULTS"
+          test "$RESULTS" = "success,success,success"
