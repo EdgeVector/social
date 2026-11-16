@@ -2,8 +2,7 @@ name: ci-required
 
 # Gate of record for EdgeVector/social. CI runs no tests (Tom, 2026-10-09).
 # `check` covers syntax, the manifest and the command grammar. The sharing
-# flow itself is proven by the Social DEV runs in EdgeVector/lastdb, which
-# clone this repo at the commit pinned in scripts/cloud_backup/social.rev.
+# flow itself is proven on main by .github/workflows/dev-sharing.yml.
 # The final job `ci-required` is the protected status name. Keep it verbatim.
 
 on:
@@ -24,7 +23,11 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - name: Python syntax
-        run: python3 -m py_compile src/*.py src/social
+        env:
+          PYTHONPYCACHEPREFIX: ${{ runner.temp }}/pycache
+        run: |
+          python3 -m py_compile src/*.py src/social ci/*.py
+          node --check ci/social_sdk.mjs
       - name: Manifest and setup definitions
         run: |
           set -euo pipefail

@@ -1,0 +1,209 @@
+name: DEV sharing
+
+# Real sharing checks for Social. Each mode starts two fresh LastDB nodes on
+# the runner (a publisher and a recipient), connects them to the DEV cloud, and
+# drives this commit's `social` command through a published LastDB nightly.
+# The recipes are in ci/. They import LastDB's generic node helpers from a
+# checkout of EdgeVector/lastdb at the exact source commit of that nightly, so
+# the helpers always match the binaries.
+# The app SDK, whose Social adapter calls these commands, is built from LastDB main.
+#
+# Cloud steps run only on main. A pull request gets the syntax job and never
+# receives cloud credentials.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "Which check to run"
+        type: choice
+        options: [all, social-share, social-circles, social-prepare]
+        default: all
+      lastdb_release:
+        description: "LastDB nightly tag, for example nightly-20261116-3484b912b. Empty selects the newest published nightly"
+        type: string
+      social_install_revision:
+        description: "For a sharing mode, optionally install this exact signed Social source from the registry"
+        type: string
+      social_install_registry:
+        description: "Signed catalog for the exact install. Sharing operations still use the DEV cloud"
+        type: choice
+        options: [dev, prod]
+        default: dev
+
+permissions:
+  contents: read
+
+concurrency:
+  # Main runs share one DEV publisher account, so they serialize.
+  group: ${{ github.event_name == 'pull_request' && format('dev-sharing-pr-{0}', github.event.pull_request.number) || 'dev-sharing-main' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  recipe-syntax:
+    name: Recipe syntax
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      modes: ${{ steps.modes.outputs.modes }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - name: Require main for a manual cloud run
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          SELECTED_REF: ${{ github.ref }}
+        run: test "$SELECTED_REF" = refs/heads/main
+      - name: Check the recipe syntax
+        env:
+          PYTHONPYCACHEPREFIX: ${{ runner.temp }}/pycache
+        run: |
+          python3 -m py_compile ci/*.py
+          node --check ci/social_sdk.mjs
+      - name: Select the modes
+        id: modes
+        env:
+          MODE: ${{ inputs.mode || 'all' }}
+        run: |
+          set -euo pipefail
+          case "$MODE" in
+            all) modes='["social-share","social-circles","social-prepare"]' ;;
+            social-share|social-circles|social-prepare) modes="[\"$MODE\"]" ;;
+            *) exit 2 ;;
+          esac
+          printf 'modes=%s\n' "$modes" >> "$GITHUB_OUTPUT"
+
+  sharing:
+    name: ${{ matrix.mode }} in DEV
+    needs: recipe-syntax
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    environment: dev-sharing
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        mode: ${{ fromJSON(needs.recipe-syntax.outputs.modes) }}
+    env:
+      TARGET: x86_64-unknown-linux-gnu
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Download and verify the LastDB nightly
+        env:
+          GH_TOKEN: ${{ github.token }}
+          LASTDB_RELEASE: ${{ inputs.lastdb_release }}
+        run: |
+          set -euo pipefail
+          tag="$LASTDB_RELEASE"
+          if [ -z "$tag" ]; then
+            tag="$(gh api 'repos/EdgeVector/lastdb/releases?per_page=30' \
+              --jq '[.[] | select(.draft == false and (.tag_name | startswith("nightly-")))][0].tag_name')"
+          fi
+          [[ "$tag" =~ ^nightly-[0-9]{8}-[0-9a-f]{9}$ ]]
+          release="$RUNNER_TEMP/lastdb-release"
+          mkdir -m 700 "$release"
+          gh release download "$tag" -R EdgeVector/lastdb -D "$release" \
+            -p "lastdb-$TARGET.tar.gz" -p "lastdb-$TARGET.manifest.json" -p SHA256SUMS.txt -p nightly.json
+          cd "$release"
+          # The checksum list comes from the same release. It proves the files
+          # are intact and consistent, not who published them.
+          grep -E "  (lastdb-$TARGET\.(tar\.gz|manifest\.json)|nightly\.json)\$" SHA256SUMS.txt > selected.sha256
+          test "$(wc -l < selected.sha256)" -eq 3
+          sha256sum --check --strict selected.sha256
+          manifest="lastdb-$TARGET.manifest.json"
+          bundle="$(sha256sum "lastdb-$TARGET.tar.gz" | cut -d ' ' -f 1)"
+          test "$(jq -r .artifact.sha256 "$manifest")" = "$bundle"
+          test "$(jq -r .target "$manifest")" = "$TARGET"
+          test "$(jq -r --arg target "$TARGET" '.platforms[$target].manifest.artifact.sha256' nightly.json)" = "$bundle"
+          source="$(jq -r .source_git_oid "$manifest")"
+          version="$(jq -r .version "$manifest")"
+          [[ "$source" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+-nightly\.[0-9]{8}\.g[0-9a-f]{9}$ ]]
+          test "${tag##*-}" = "${source:0:9}"
+          bin="$RUNNER_TEMP/lastdb-bin"
+          mkdir -m 700 "$bin"
+          tar -xzf "lastdb-$TARGET.tar.gz" -C "$bin" lastdb lastdbd
+          for name in lastdb lastdbd; do
+            expected="$(jq -r --arg name "$name" '.binaries[] | select(.name == $name) | .sha256' "$manifest")"
+            test "$(sha256sum "$bin/$name" | cut -d ' ' -f 1)" = "$expected"
+          done
+          {
+            printf 'LASTDB_BIN=%s\n' "$bin"
+            printf 'LASTDB_VERSION=%s\n' "$version"
+            printf 'LASTDB_SOURCE_COMMIT=%s\n' "$source"
+          } >> "$GITHUB_ENV"
+          {
+            printf 'LastDB nightly: `%s` (`%s`)\n\n' "$tag" "$version"
+            printf 'LastDB source: `%s`\n\n' "$source"
+            printf 'Social source: `%s`\n' "$GITHUB_SHA"
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Check out LastDB at the nightly's source commit
+        env:
+          GIT_TERMINAL_PROMPT: "0"
+        run: |
+          set -euo pipefail
+          # LastDB is public. Clone it with no credentials. Its scripts supply
+          # the node helpers, the compiled DEV endpoints and the SDK source.
+          source="$RUNNER_TEMP/lastdb-source"
+          env -u GH_TOKEN -u GITHUB_TOKEN git clone --no-checkout --filter=blob:none \
+            https://github.com/EdgeVector/lastdb.git "$source"
+          git -C "$source" checkout --detach "$LASTDB_SOURCE_COMMIT"
+          test "$(git -C "$source" rev-parse HEAD)" = "$LASTDB_SOURCE_COMMIT"
+          for helper in scripts/harness.py scripts/cloud_backup/support.py scripts/cloud_backup/node.py \
+              scripts/cloud_backup/programs.py scripts/mutation_log_load/node_auth.py \
+              lastdb_node/environments.json; do
+            test -f "$source/$helper"
+          done
+          printf 'LASTDB_SOURCE=%s\n' "$source" >> "$GITHUB_ENV"
+      - name: Build the LastDB app SDK for the Social adapter
+        if: matrix.mode != 'social-prepare'
+        env:
+          GIT_TERMINAL_PROMPT: "0"
+        run: |
+          set -euo pipefail
+          # The SDK's Social adapter calls this repo's commands, so it has to be
+          # the current adapter. Build it from LastDB main. The nightly's source
+          # can be older than a Social command change.
+          sdk="$RUNNER_TEMP/lastdb-sdk-source"
+          env -u GH_TOKEN -u GITHUB_TOKEN git -C "$LASTDB_SOURCE" worktree add --detach "$sdk" origin/main
+          printf '\nLastDB SDK source: `%s`\n' "$(git -C "$sdk" rev-parse HEAD)" >> "$GITHUB_STEP_SUMMARY"
+          cd "$sdk/lastdb_app_sdk"
+          npm ci
+          npm run build
+          npm pack --ignore-scripts --pack-destination "$RUNNER_TEMP"
+          mkdir -m 700 "$RUNNER_TEMP/social-sdk"
+          tar -xzf "$RUNNER_TEMP"/lastdb-app-sdk-*.tgz -C "$RUNNER_TEMP/social-sdk"
+          cp "$GITHUB_WORKSPACE/ci/social_sdk.mjs" "$RUNNER_TEMP/social-sdk/exercise.mjs"
+          printf 'SOCIAL_SDK_OPERATION=%s/social-sdk/exercise.mjs\n' "$RUNNER_TEMP" >> "$GITHUB_ENV"
+      - name: Install the signed log read tool dependency
+        if: matrix.mode == 'social-circles'
+        run: python3 -m pip install --quiet cryptography==41.0.7
+      - name: Run the DEV check
+        env:
+          OPERATION: ${{ matrix.mode }}
+          # Keep bytecode out of both checkouts. Publishing reads a clean checkout.
+          PYTHONPYCACHEPREFIX: ${{ runner.temp }}/pycache
+          SOCIAL_INSTALL_REVISION: ${{ inputs.social_install_revision }}
+          SOCIAL_INSTALL_REGISTRY: ${{ inputs.social_install_registry }}
+          LASTDB_CLOUD_DEV_API_KEY: ${{ matrix.mode != 'social-prepare' && secrets.LASTDB_CLOUD_DEV_API_KEY || '' }}
+          LASTDB_CLOUD_DEV_RECOVERY_PHRASE: ${{ matrix.mode != 'social-prepare' && secrets.LASTDB_CLOUD_DEV_RECOVERY_PHRASE || '' }}
+        run: |
+          set -euo pipefail
+          case "$OPERATION" in
+            social-share) recipe=social_share ;;
+            social-circles) recipe=social_circles ;;
+            social-prepare) recipe=social_prepare ;;
+            *) exit 2 ;;
+          esac
+          export PYTHONPATH="$LASTDB_SOURCE/scripts/cloud_backup:$LASTDB_SOURCE/scripts/mutation_log_load"
+          python3 "ci/$recipe.py" --bin-dir "$LASTDB_BIN" --version "$LASTDB_VERSION"

@@ -208,3 +208,24 @@ session to the selected database and its approved operation.
 
 The TypeScript [LastDB app SDK](https://github.com/EdgeVector/lastdb/blob/main/lastdb_app_sdk/README.md#set-up-sharing-with-social)
 exposes `socialClient`, which runs these commands.
+
+## How Social is checked
+
+A pull request gets syntax, manifest and command-grammar checks
+(`.github/workflows/ci-required.yml`). It never receives cloud credentials.
+
+Every push to `main` then runs `.github/workflows/dev-sharing.yml`, which can
+also be dispatched by hand. Each mode starts two fresh LastDB nodes on the
+runner, a publisher and a recipient, from the newest published LastDB nightly,
+connects them to the DEV cloud, and drives this commit's `social` command:
+
+| Mode | What it proves |
+| --- | --- |
+| `social-share` | Save a contact, set up `shared-albums`, invite, accept, read, revoke and regrant on a filtered share, with two scoped content clients |
+| `social-circles` | Circles with per-database write scopes, allowed and refused writes, app sharing requests, grants changed outside Social, direct grant, revoke and restore |
+| `social-prepare` | The manifest and schemas produce a valid unsigned registry declaration for this commit on a fresh node |
+
+The recipes are in `ci/`. They import LastDB's generic node helpers from a
+checkout of `EdgeVector/lastdb` at the nightly's exact source commit, and they
+exercise the Social adapter of the LastDB app SDK built from that checkout.
+Pass `lastdb_release` to a manual run to use a specific nightly tag.
