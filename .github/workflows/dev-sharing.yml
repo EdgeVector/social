@@ -13,6 +13,10 @@ name: DEV sharing
 on:
   push:
     branches: [main]
+  # LastDB publishes its nightly from a 07:17 UTC schedule. Run two hours later
+  # so a LastDB change that breaks sharing shows up here the same day.
+  schedule:
+    - cron: '23 9 * * *'
   pull_request:
     branches: [main]
   workflow_dispatch:

@@ -214,8 +214,9 @@ exposes `socialClient`, which runs these commands.
 A pull request gets syntax, manifest and command-grammar checks
 (`.github/workflows/ci-required.yml`). It never receives cloud credentials.
 
-Every push to `main` then runs `.github/workflows/dev-sharing.yml`, which can
-also be dispatched by hand. Each mode starts two fresh LastDB nodes on the
+Every push to `main` then runs `.github/workflows/dev-sharing.yml`. It also
+runs daily at 09:23 UTC, after the LastDB nightly is published, and can be
+dispatched by hand. Each mode starts two fresh LastDB nodes on the
 runner, a publisher and a recipient, from the newest published LastDB nightly,
 connects them to the DEV cloud, and drives this commit's `social` command:
 

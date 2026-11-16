@@ -17,7 +17,8 @@ moved here from `EdgeVector/lastdb` (`apps/social`) on 2026-11-16.
 - No tests. Pull requests get syntax, manifest and `--help` checks. The
   sharing flow is proven on main by `.github/workflows/dev-sharing.yml`
   (`social-share`, `social-circles`, `social-prepare`). It runs on every
-  push to main and by manual dispatch, never on a pull request. The recipes
+  push to main, daily at 09:23 UTC after the LastDB nightly, and by manual
+  dispatch, never on a pull request. The recipes
   are in `ci/`. They start two fresh LastDB nodes from a published LastDB
   nightly, connect them to the DEV cloud, and drive this commit's `social`
   command. A change that alters command output or behaviour must update
