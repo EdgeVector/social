@@ -5,62 +5,25 @@ from __future__ import annotations
 from concurrent.futures import ThreadPoolExecutor
 from hashlib import sha256
 from http.client import HTTPException
-import json
 from uuid import UUID
 
+from circle_store import CircleStore, encoded
 from circles import GrantReview, SavedSharingUpdate, normalize
-from lastdb import SocialError, record_mutation
+from lastdb import SocialError
 from sharing import can_manage_sharing
-
-
-SCHEMA = "social-graph/CircleDirectory"
-KEY = "directory"
-
-
-def encoded(value):
-    return json.dumps(value, separators=(",", ":"), sort_keys=True)
 
 
 class ReusableCircles:
     def __init__(self, node, sharing, circles):
         self.node, self.sharing, self.circles = node, sharing, circles
+        self.store = CircleStore(node)
 
     def load(self):
-        definition = self.node.declare_private("CircleDirectory")
-        record = self.node.get_record(SCHEMA, KEY)
-        data = json.loads(record["fields"]["directory"]) if record else {"circles": []}
-        data.setdefault("pendingDatabases", [])
-        data.setdefault("operations", {})
-        return definition, record, data
-
-    def save(self, definition, record, data, remove_request=None):
-        fields = {"directory": encoded(data)}
-        if remove_request is None:
-            revision = self.node.write_record(SCHEMA, definition, KEY, fields, record)["record_revision"]
-        else:
-            update = record_mutation(SCHEMA, definition, {"hash": KEY, "range": None}, fields, record)
-            ack = self.node.call("POST", "/api/mutations/batch", {"mutations": [update, remove_request]})
-            revision = ack["record_revisions"][ack["mutation_ids"][0]]
-        return {"fields": fields, "revision": revision}
+        return self.store.load()
 
     def owned(self):
         return {row["id"]: row for row in self.sharing.databases()
                 if row.get("sharingMode") == "whole_database" and can_manage_sharing(row)}
-
-    def overview(self):
-        _, _, data = self.load()
-        owned = self.owned()
-        with ThreadPoolExecutor(max_workers=4) as pool:
-            catalogs = list(pool.map(self.catalog, owned))
-        databases = [{"id": key, "name": row["name"], "schemas": names}
-                     for (key, row), names in zip(owned.items(), catalogs)]
-        return {"circles": data["circles"], "pending": data["pendingDatabases"], "databases": databases}
-
-    def catalog(self, database):
-        try:
-            return sorted(self.circles.schemas(database))
-        except (SocialError, OSError, HTTPException):
-            return None
 
     def change(self, args, *, apply=False, token=None, defer=False):
         """Preview one edit under the lock, and apply that same preview when asked.
@@ -77,8 +40,8 @@ class ReusableCircles:
 
     def edit_locked(self, args, *, apply=False, operation=None, remove_request=None):
         self.node.require_named_grants()
-        definition, record, data = self.load()
-        prior, pending = data["circles"], set(data["pendingDatabases"])
+        directory = self.load()
+        prior, pending = directory.circles, set(directory.pending)
         retrying = "circle" not in args and operation is None
         if "circle" in args:
             desired, databases = self.replacement(prior, args["circle"], args.get("remove") is True)
@@ -95,13 +58,12 @@ class ReusableCircles:
         if not retrying and pending.intersection(databases):
             raise SocialError("finish the pending sharing update for the affected database before changing it again")
 
-        operations = dict(data["operations"])
+        operations = dict(directory.operations)
         if operation:
             operations[operation["databaseId"]] = {**operation, "status": "pending"}
         review = args.get("review", {})
         plans = self.prepare(desired, databases, operations, review)
-        fingerprint = sha256(encoded([record["revision"] if record else None, desired,
-                                      plans, operation]).encode()).hexdigest()
+        fingerprint = sha256(encoded([directory.revisions(), desired, plans, operation]).encode()).hexdigest()
         if not apply:
             return self.preview(fingerprint, plans)
         if args.get("token") != fingerprint:
@@ -110,11 +72,10 @@ class ReusableCircles:
             raise SocialError("resolve the unavailable databases before applying this edit")
         if operation and any("error" in plan for plan in plans):
             raise SocialError("resolve the outside grants in the preview before approving this request")
-        data.update(circles=desired, pendingDatabases=sorted(pending | databases), operations=operations)
-        record = self.save(definition, record, data, remove_request)
+        directory = self.store.save(directory, desired, pending | databases, operations, remove_request)
         if retrying:
-            plans = self.replay_pending(data, plans, review)
-        return self.finish(definition, record, data, plans)
+            plans = self.replay_pending(directory, plans, review)
+        return self.finish(directory, plans)
 
     def preview(self, fingerprint, plans):
         databases = [impact(plan) for plan in plans]
@@ -127,24 +88,11 @@ class ReusableCircles:
         return {"token": fingerprint, "databases": databases,
                 "contactNames": {key: person["display_name"] for key, person in people.items()}}
 
-    def resume(self, database=None):
-        pending = self.load()[2]["pendingDatabases"]
-        if not pending or (database is not None and database not in pending):
-            return {"databases": [], "pending": pending}
-        with self.circles.lock():
-            definition, record, data = self.load()
-            pending = data["pendingDatabases"]
-            selected = pending if database is None else [item for item in pending if item == database]
-            if selected:
-                plans = self.prepare(data["circles"], selected, data["operations"])
-                return self.finish(definition, record, data, self.replay_pending(data, plans))
-            return {"databases": [], "pending": pending}
-
     @staticmethod
     def direct_intent(operation):
         return operation.get("direct") if operation and operation.get("status") != "confirmed" else None
 
-    def replay_pending(self, data, plans, review=None):
+    def replay_pending(self, directory, plans, review):
         saved = [plan["databaseId"] for plan in plans if plan.get("savedRequest")]
         if not saved:
             return plans
@@ -161,15 +109,15 @@ class ReusableCircles:
         # A saved request can belong to another action in Social. Confirm the
         # approved circle or direct declaration against the resulting roster.
         refreshed = {plan["databaseId"]: plan for plan in self.prepare(
-            data["circles"], reopened, data["operations"], review
+            directory.circles, reopened, directory.operations, review
         )} if reopened else {}
         return [refreshed.get(plan["databaseId"], plan) for plan in plans]
 
-    def finish(self, definition, record, data, plans):
+    def finish(self, directory, plans):
         with ThreadPoolExecutor(max_workers=4) as pool:
             outcomes = list(pool.map(self.deliver, plans))
-        pending = set(data["pendingDatabases"])
-        operations = data["operations"]
+        pending = set(directory.pending)
+        operations = dict(directory.operations)
         for outcome in outcomes:
             database = outcome["databaseId"]
             if outcome["status"] == "confirmed":
@@ -181,9 +129,8 @@ class ReusableCircles:
                 operations[database] = {"requestId": operation["requestId"], **receipt}
                 if outcome["status"] != "confirmed" and "direct" in operation:
                     operations[database]["direct"] = operation["direct"]
-        data["pendingDatabases"] = sorted(pending)
-        self.save(definition, record, data)
-        return {"databases": outcomes, "pending": data["pendingDatabases"]}
+        self.store.save(directory, directory.circles, pending, operations)
+        return {"databases": outcomes, "pending": sorted(pending)}
 
     def replacement(self, prior, change, remove):
         identity = change["id"]

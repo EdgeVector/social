@@ -29,7 +29,7 @@ def person_remove(app, args):
 
 
 def circle_list(app, _args):
-    return app.reusable_circles.load()[2]["circles"]
+    return app.reusable_circles.load().circles
 
 
 def circle_show(app, args):

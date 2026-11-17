@@ -1,6 +1,6 @@
 {
   "app_id": "social-graph",
-  "version": "0.8.1",
+  "version": "0.9.0",
   "source": "https://github.com/EdgeVector/social.git",
   "audience": "public",
   "metadata": {
@@ -99,24 +99,63 @@
       "owner_app_id": "social-graph"
     },
     {
-      "name": "CircleDirectory",
-      "descriptive_name": "Circle directory",
-      "purpose_statement": "Private reusable circles and their unfinished database updates.",
-      "schema_type": "Hash",
+      "name": "Circle",
+      "descriptive_name": "Circle",
+      "purpose_statement": "One private reusable circle. The range coordinate is circle_id.",
+      "schema_type": "HashRange",
       "record_keys": {
         "primary": {
-          "kind": "hash"
+          "kind": "hash_range",
+          "range_type": "String"
         },
         "alternates": {}
       },
       "fields": [
-        "directory"
+        "circle_id",
+        "name",
+        "members",
+        "links"
       ],
       "field_types": {
-        "directory": "String"
+        "circle_id": "String",
+        "name": "String",
+        "members": "String",
+        "links": "String"
       },
       "field_descriptions": {
-        "directory": "Circle identities, members, linked database scopes and pending updates."
+        "circle_id": "Stable identifier of this circle.",
+        "name": "Name the owner gave this circle.",
+        "members": "Node keys of the verified contacts in this circle.",
+        "links": "Write scope of this circle on each linked database."
+      },
+      "owner_app_id": "social-graph"
+    },
+    {
+      "name": "DatabaseUpdate",
+      "descriptive_name": "Database update",
+      "purpose_statement": "Circle update progress for one owned database. The range coordinate is database_id.",
+      "schema_type": "HashRange",
+      "record_keys": {
+        "primary": {
+          "kind": "hash_range",
+          "range_type": "String"
+        },
+        "alternates": {}
+      },
+      "fields": [
+        "database_id",
+        "pending",
+        "operation"
+      ],
+      "field_types": {
+        "database_id": "String",
+        "pending": "Boolean",
+        "operation": "String"
+      },
+      "field_descriptions": {
+        "database_id": "Stable identifier of the database.",
+        "pending": "Whether a circle update for this database is unfinished.",
+        "operation": "The latest approved sharing operation on this database and its outcome."
       },
       "owner_app_id": "social-graph"
     },

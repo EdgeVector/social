@@ -60,7 +60,7 @@ def parse_review(app, entries):
 def circle_set(app, name, *, members=None, links=(), unlink=(), rename=None, review=None,
                apply=False, token=None, defer=False):
     """Create a circle or replace the named parts of an existing one."""
-    circles = app.reusable_circles.load()[2]["circles"]
+    circles = app.reusable_circles.load().circles
     current = next((row for row in circles if same_circle(row, name)), None)
     rows = app.sharing.databases()
     scopes = dict(current["links"]) if current else {}
@@ -121,7 +121,7 @@ def retry(app, database=None, review=None):
     with app.circles.lock():
         if database_id:
             app.sharing.resume_pending(database_id)
-        pending = reusable.load()[2]["pendingDatabases"]
+        pending = reusable.load().pending
         if not [item for item in pending if database_id in (None, item)]:
             return {"applied": True, "databases": [], "pending": pending}
         args = {"review": review, **({"databaseId": database_id} if database_id else {})}

@@ -64,8 +64,8 @@ class RequestIndex:
         if not request_ids:
             return [], []
         # Read operations first. A newer operation saves the previous decision
-        # to its request before replacing the directory entry.
-        operations = self.reusable.load()[2]["operations"]
+        # to its request before replacing the database's update record.
+        operations = self.reusable.load().operations
         records = self.read_batch(REQUESTS, [{"HashKey": request_id} for request_id in request_ids])
         pending, decided = [], []
         for rows in records:

@@ -42,8 +42,7 @@ class SharingRequests:
         self.index = RequestIndex(node, reusable)
 
     def circles(self):
-        _, _, data = self.reusable.load()
-        return [{"id": row["id"], "name": row["name"]} for row in data["circles"]]
+        return [{"id": row["id"], "name": row["name"]} for row in self.reusable.load().circles]
 
     def awaiting(self, cursor=None):
         return self.index.awaiting(cursor)
@@ -99,8 +98,8 @@ class SharingRequests:
         declaration = data["declaration"]
         if "receipt" in data:
             return status(declaration, data["receipt"])
-        _, _, directory = self.reusable.load()
-        active = directory["operations"].get(declaration["change"]["databaseId"])
+        directory = self.reusable.load()
+        active = directory.operations.get(declaration["change"]["databaseId"])
         if active and active["requestId"] == request_id:
             return status(declaration, active)
         # A newer operation may have archived this receipt between the reads.
@@ -126,14 +125,14 @@ class SharingRequests:
         change = parse_change(change)
         request = {"requestId": str(uuid5(OWNER_CHANGES, encoded(change))), "change": change}
         with self.reusable.circles.lock():
-            _, _, directory = self.reusable.load()
+            directory = self.reusable.load()
             edit, operation, label = self.edit(request, directory, review)
             preview = {**self.reusable.edit_locked(edit, operation=operation),
                        "subjectName": label, "change": change}
             if not apply:
                 return {**preview, "applied": False}
             confirm(preview, token)
-            self.archive(directory["operations"].get(change["databaseId"]))
+            self.archive(directory.operations.get(change["databaseId"]))
             applied = self.reusable.edit_locked({**edit, "token": preview["token"]}, apply=True,
                                                 operation=operation)
             return {**applied, "subjectName": label, "change": change, "applied": True}
@@ -143,8 +142,8 @@ class SharingRequests:
         if not data:
             raise SocialError("sharing request does not exist")
         request = data["declaration"]
-        _, _, directory = self.reusable.load()
-        active = directory["operations"].get(request["change"]["databaseId"])
+        directory = self.reusable.load()
+        active = directory.operations.get(request["change"]["databaseId"])
         if "receipt" in data or (active and active["requestId"] == request_id):
             return self.status(request_id)
         edit, operation, label = self.edit(request, directory, review)
@@ -165,8 +164,8 @@ class SharingRequests:
             receipt = data.get("receipt")
             if receipt and receipt["status"] == "declined":
                 return status(request, receipt)
-            _, _, directory = self.reusable.load()
-            active = directory["operations"].get(request["change"]["databaseId"])
+            directory = self.reusable.load()
+            active = directory.operations.get(request["change"]["databaseId"])
             if receipt or (active and active["requestId"] == request_id):
                 raise SocialError("only requests awaiting approval can be declined")
             receipt = {"status": "declined"}
@@ -184,7 +183,7 @@ class SharingRequests:
             if node not in people:
                 raise SocialError("save this person's verified contact before sharing")
             return edit, {**operation, "direct": change}, people[node]["display_name"]
-        circle = next((row for row in directory["circles"] if row["id"] == change["circleId"]), None)
+        circle = next((row for row in directory.circles if row["id"] == change["circleId"]), None)
         if not circle:
             raise SocialError("the circle no longer exists")
         links = dict(circle["links"])

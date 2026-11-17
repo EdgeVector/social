@@ -48,7 +48,7 @@ class SocialApp:
     def remove_person(self, node_key):
         """Remove a contact that no circle lists and no owned database grants access to."""
         person = self.people.by_keys([node_key])[node_key]
-        circles = [row["name"] for row in self.reusable_circles.load()[2]["circles"] if node_key in row["members"]]
+        circles = [row["name"] for row in self.reusable_circles.load().circles if node_key in row["members"]]
         if circles:
             raise SocialError(f"remove this person from these circles first: {', '.join(circles)}")
         configs = self.sharing.all_configurations(None)
@@ -152,7 +152,7 @@ class SocialApp:
         return rows
 
     def circle(self, selector):
-        circles = self.reusable_circles.load()[2]["circles"]
+        circles = self.reusable_circles.load().circles
         matches = [row for row in circles
                    if selector == row["id"] or selector.casefold() == row["name"].casefold()]
         if len(matches) != 1:
@@ -161,7 +161,7 @@ class SocialApp:
 
     def circle_view(self, selector):
         circle = self.circle(selector)
-        pending = self.reusable_circles.load()[2]["pendingDatabases"]
+        pending = self.reusable_circles.load().pending
         owned = self.reusable_circles.owned()
         contacts = self.people.by_keys(circle["members"])
         return {
