@@ -1,6 +1,7 @@
 """Map each `social NOUN VERB` command to its owner operation."""
 
 import json
+import os
 import sys
 
 import changes
@@ -141,7 +142,10 @@ def pick_database(app, args):
 
 
 def check(app, _args):
-    app.node.require_sessions()
+    # The restricted launcher and the install probe use the app socket.
+    # GET /api/version is an owner route, so it is checked only on that socket.
+    if not os.environ.get("LASTDB_SOCKET_PATH"):
+        app.node.require_sessions()
     return {"ready": True}
 
 

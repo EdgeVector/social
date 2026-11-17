@@ -74,12 +74,11 @@ class Sharing:
         return f"/api/databases/{database_id}/share/config"
 
     def update_member(self, database_id, node_key, active):
-        definition = self.node.declare_private("SharingUpdate")
         starting_member = UNREAD
         for _ in range(3):
             previous_request = self.node.get_record(PENDING_SCHEMA, database_id)
             if previous_request and previous_request["fields"]["request"]:
-                self.finish_update(database_id, definition, previous_request)
+                self.finish_update(database_id, previous_request)
                 continue
             current = self.configuration(database_id)
             members = {row["nodeKey"]: row for row in current["members"]}
@@ -105,7 +104,7 @@ class Sharing:
             update = {"expectedRevision": current["revision"], "requestId": str(uuid.uuid4()),
                       "members": list(members.values())}
             try:
-                revision = self.save_update(database_id, definition, previous_request, update)
+                revision = self.save_update(database_id, previous_request, update)
             except LastDBError as error:
                 if error.status != 409:
                     raise
@@ -115,39 +114,35 @@ class Sharing:
         raise SocialError("the sharing configuration changed concurrently; retry the operation")
 
     def apply_members(self, database_id, expected_revision, members, circles):
-        definition = self.node.declare_private("SharingUpdate")
         previous = self.node.get_record(PENDING_SCHEMA, database_id)
         if previous and previous["fields"]["request"]:
             raise SocialError("finish the pending sharing change first")
         request = {"expectedRevision": expected_revision, "requestId": str(uuid.uuid4()),
                    "members": members, "circles": circles}
-        revision = self.save_update(database_id, definition, previous, request)
+        revision = self.save_update(database_id, previous, request)
         if revision is None:
             raise SocialError("sharing changed while you edited it; review the current roster")
         return revision
 
-    def save_update(self, database_id, definition, previous, request):
+    def save_update(self, database_id, previous, request):
         encoded = json.dumps(request, separators=(",", ":"))
-        written = self.node.write_record(PENDING_SCHEMA, definition, database_id,
-                                         {"request": encoded}, previous)
-        saved = {"revision": written["record_revision"], "fields": {"request": encoded}}
-        return self.finish_update(database_id, definition, saved)
+        written = self.node.write_record(PENDING_SCHEMA, database_id, {"request": encoded}, previous)
+        saved = {"revision": written["revision"], "fields": {"request": encoded}}
+        return self.finish_update(database_id, saved)
 
     def resume_pending(self, database_id):
-        definition = self.node.declare_private("SharingUpdate")
         saved = self.node.get_record(PENDING_SCHEMA, database_id)
         if saved and saved["fields"]["request"]:
-            self.finish_update(database_id, definition, saved)
+            self.finish_update(database_id, saved)
 
     def pending_edit(self, database_id):
-        self.node.declare_private("SharingUpdate")
         saved = self.node.get_record(PENDING_SCHEMA, database_id)
         if not saved or not saved["fields"]["request"]:
             return None
         request = json.loads(saved["fields"]["request"])
         return {"expectedRevision": request["expectedRevision"], "members": request["members"]}
 
-    def finish_update(self, database_id, definition, saved):
+    def finish_update(self, database_id, saved):
         request = json.loads(saved["fields"]["request"])
         if any(member.get("regrant") and member["role"] == "submit" and "writeSchemas" not in member
                for member in request["members"]):
@@ -157,19 +152,19 @@ class Sharing:
         except LastDBError as error:
             if error.code != "share_revision_conflict" and error.status not in (400, 403, 404):
                 raise
-            self.clear_update(database_id, definition, saved)
+            self.clear_update(database_id, saved)
             if error.code != "share_revision_conflict":
                 raise
             return None
         if "circles" in request:
             from circles import store_policy
             store_policy(self.node, database_id, request["circles"])
-        self.clear_update(database_id, definition, saved)
+        self.clear_update(database_id, saved)
         return revision
 
-    def clear_update(self, database_id, definition, saved):
+    def clear_update(self, database_id, saved):
         try:
-            self.node.write_record(PENDING_SCHEMA, definition, database_id, {"request": ""}, saved)
+            self.node.write_record(PENDING_SCHEMA, database_id, {"request": ""}, saved)
         except LastDBError as error:
             if error.status != 409:
                 raise

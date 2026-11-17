@@ -1,6 +1,6 @@
 {
   "app_id": "social-graph",
-  "version": "0.9.0",
+  "version": "0.10.0",
   "source": "https://github.com/EdgeVector/social.git",
   "audience": "public",
   "metadata": {
@@ -258,6 +258,31 @@
       "owner_app_id": "social-graph"
     }
   ],
+  "access": {
+    "read": [
+      "social-graph/Person",
+      "social-graph/AddressBookEntry",
+      "social-graph/SharingUpdate",
+      "social-graph/Circle",
+      "social-graph/DatabaseUpdate",
+      "social-graph/CirclePolicy",
+      "social-graph/SharingRequest",
+      "social-graph/PendingSharingRequest",
+      "social-graph/DatabaseSetup"
+    ],
+    "write": [
+      "social-graph/Person",
+      "social-graph/AddressBookEntry",
+      "social-graph/SharingUpdate",
+      "social-graph/Circle",
+      "social-graph/DatabaseUpdate",
+      "social-graph/CirclePolicy",
+      "social-graph/SharingRequest",
+      "social-graph/PendingSharingRequest",
+      "social-graph/DatabaseSetup"
+    ],
+    "extensions": []
+  },
   "install": {
     "links": [
       {

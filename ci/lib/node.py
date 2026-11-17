@@ -11,6 +11,7 @@ import hashlib
 import http.client
 import json
 import os
+from pathlib import Path
 import re
 import selectors
 import signal
@@ -226,6 +227,23 @@ class OwnedNode:
                 return False
 
         poll_until(120, check_boot, interval=0.2, timeout_error=OperationError("daemon_start_deadline"))
+        self.place_social_schemas()
+
+    def place_social_schemas(self):
+        """Place each manifest schema on the owner socket, as the installer does.
+
+        The declare route stores the name as `<app_id>/<local>`. Retention, if
+        a schema has it, sits beside `schema`. Social does not declare schemas.
+        """
+        manifest_path = Path(__file__).resolve().parents[2] / "lastdb-app.json"
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        for schema in manifest["schemas"]:
+            body = dict(schema)
+            retention = body.pop("retention", None)
+            request = {"app_id": manifest["app_id"], "schema": body}
+            if retention is not None:
+                request["retention"] = retention
+            self.call("/api/apps/declare-schema", request)
 
     def health(self):
         paths = ("/health", "/api/status", "/api/system/boot-identity", "/api/db/native-status")

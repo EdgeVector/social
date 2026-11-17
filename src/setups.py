@@ -66,10 +66,9 @@ class Setups:
     def provision(self, name, definitions, *, existing=None):
         # Reserve the ID before issuing the create request so a lost reply is retryable.
         key = f"{SHARED_ALBUMS}:{VERSION}:{name}"
-        record_definition = self.node.declare_private("DatabaseSetup")
         saved = self.node.get_record(SCHEMA, key)
         if saved is None:
-            saved = self.reserve(name, key, record_definition, existing)
+            saved = self.reserve(name, key, existing)
         database_id = saved["fields"]["database_id"]
         if existing and existing["id"] != database_id:
             raise SocialError("this setup is already bound to a different database")
@@ -92,13 +91,13 @@ class Setups:
         verified = self.verify(database_id, definitions)
         fields = {"database_id": database_id, "ready": True}
         try:
-            self.node.write_record(SCHEMA, record_definition, key, fields, saved)
+            self.node.write_record(SCHEMA, key, fields, saved)
         except LastDBError as error:
             if error.status != 409 or (self.node.get_record(SCHEMA, key) or {}).get("fields") != fields:
                 raise
         return database, verified
 
-    def reserve(self, name, key, definition, existing):
+    def reserve(self, name, key, existing):
         if existing is None:
             if not self.node.can_retry_database_create():
                 raise SocialError("creating a setup needs LastDB with retryable whole-database creation")
@@ -106,7 +105,7 @@ class Setups:
                 raise SocialError("that name is already in use; select the owned database by ID to finish setup")
         fields = {"database_id": existing["id"] if existing else str(uuid4()), "ready": False}
         try:
-            written = self.node.write_record(SCHEMA, definition, key, fields, None)
+            written = self.node.write_record(SCHEMA, key, fields, None)
         except LastDBError as error:
             if error.status != 409:
                 raise
@@ -114,7 +113,7 @@ class Setups:
             if not saved:
                 raise
             return saved
-        return {"fields": fields, "revision": written["record_revision"]}
+        return {"fields": fields, "revision": written["revision"]}
 
     def install(self, database_id, request):
         try:

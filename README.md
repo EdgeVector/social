@@ -2,7 +2,9 @@
 
 Social remembers verified contacts in the local personal database and manages
 access to owned named LastDB databases set up for sharing. It is a command-line
-tool. It uses the LastDB owner socket of the selected home. Use Python 3.9 or
+tool. Private records use the LastDB app API. The installer places the schemas
+in `lastdb-app.json`; Social does not declare them while it runs. Sharing still
+uses the owner socket of the selected home. Use Python 3.9 or
 later and the LastDB client and daemon from the same build. The publisher needs
 a connected ExeMem account.
 

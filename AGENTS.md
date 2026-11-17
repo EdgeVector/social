@@ -7,7 +7,8 @@ moved here from `EdgeVector/lastdb` (`apps/social`) on 2026-11-16.
   `src/commands.py` maps each command to an owner operation.
 - `ci/` holds the DEV sharing recipes run by `dev-sharing.yml`.
 - `lastdb-app.json` is the app manifest and the source of Social's private
-  schema definitions.
+  schema definitions. The installer places those schemas. Social does not
+  declare them at run time. The `access` block names each exact schema.
 - `setups/shared-albums-v1/` holds the schema definitions of the
   `shared-albums` version 1 setup. This is the only copy of the
   definitions. `EdgeVector/lastdb` keeps just the field names of the

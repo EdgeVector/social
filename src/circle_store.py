@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 
-from lastdb import SocialError, record_mutation
+from lastdb import record_mutation
 
 
 # Schema name, the hash every record of it shares, and the field that is its range.
@@ -43,26 +43,22 @@ class CircleStore:
         self.node = node
 
     def load(self):
-        for kind in (CIRCLES, UPDATES):
-            self.node.declare_private(kind[0])
         rows = {CIRCLES: {}, UPDATES: {}}
         cursors = {CIRCLES: None, UPDATES: None}
         while cursors:
             kinds = list(cursors)
-            queries = [{"schema_name": schema_name(kind), "filter": {"HashKey": kind[1]}, "limit": 64,
-                        **({"cursor": cursors[kind]} if cursors[kind] else {})} for kind in kinds]
-            batch = self.node.call("POST", "/api/queries/batch", {"queries": queries})["results"]
-            if len(batch) != len(kinds) or any(item["status"] != 200 for item in batch):
-                raise SocialError("LastDB could not read the circles")
-            for kind, item in zip(kinds, batch):
-                page = item["response"]
-                rows[kind].update({row["fields"][kind[2]]: row for row in page["results"]})
-                if not page["has_more"]:
-                    del cursors[kind]
-                elif not page.get("next_cursor"):
-                    raise SocialError("LastDB omitted the next circle cursor")
-                else:
+            reads = []
+            for kind in kinds:
+                item = {"schema": schema_name(kind), "range": {"hash": kind[1]}, "limit": 64}
+                if cursors[kind]:
+                    item["cursor"] = cursors[kind]
+                reads.append(item)
+            for kind, page in zip(kinds, self.node.read(reads)):
+                rows[kind].update({row["fields"][kind[2]]: row for row in page["records"]})
+                if page["next_cursor"]:
                     cursors[kind] = page["next_cursor"]
+                else:
+                    del cursors[kind]
         return Directory(rows[CIRCLES], rows[UPDATES])
 
     def save(self, directory, circles, pending, operations, extra=None):
@@ -77,24 +73,23 @@ class CircleStore:
         }
         mutations, targets = [], []
         for kind, wanted in desired.items():
-            definition = self.node.declare_private(kind[0])
             stored = directory.rows[kind]
             for key in sorted(wanted.keys() | stored.keys()):
                 fields, previous = wanted.get(key), stored.get(key)
                 if previous and previous["fields"] == fields:
                     continue
-                mutations.append(record_mutation(schema_name(kind), definition,
-                                                 {"hash": kind[1], "range": key}, fields, previous))
+                mutations.append(record_mutation(schema_name(kind), {"hash": kind[1], "range": key},
+                                                 fields, previous))
                 targets.append((kind, key, fields))
         if extra is not None:
             mutations.append(extra)
         if not mutations:
             return directory
-        ack = self.node.call("POST", "/api/mutations/batch", {"mutations": mutations})
+        revisions = self.node.write(mutations)["revisions"]
         rows = {kind: dict(stored) for kind, stored in directory.rows.items()}
-        for (kind, key, fields), mutation in zip(targets, ack["mutation_ids"]):
+        for (kind, key, fields), revision in zip(targets, revisions):
             if fields is None:
                 del rows[kind][key]
             else:
-                rows[kind][key] = {"fields": fields, "revision": ack["record_revisions"][mutation]}
+                rows[kind][key] = {"fields": fields, "revision": revision}
         return Directory(rows[CIRCLES], rows[UPDATES])

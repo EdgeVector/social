@@ -37,7 +37,6 @@ class Circles:
                 if row.get("definition_id") and row.get("state") == "Available"}
 
     def load(self, database):
-        self.node.declare_private("CirclePolicy")
         previous = self.node.get_record(SCHEMA, database)
         saved = json.loads(previous["fields"]["circles"]) if previous else []
         return {"circles": saved, "direct": {}} if isinstance(saved, list) else saved
@@ -109,7 +108,9 @@ class Circles:
 
     @contextmanager
     def lock(self):
-        with (self.node.home / "social-circle-edit.lock").open("a") as handle:
+        path = self.node.state_dir() / "social-circle-edit.lock"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("a") as handle:
             try:
                 fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
             except BlockingIOError as error:
@@ -118,11 +119,10 @@ class Circles:
 
 
 def store_policy(node, database, circles):
-    definition = node.declare_private("CirclePolicy")
     previous = node.get_record(SCHEMA, database)
     encoded = json.dumps(circles, separators=(",", ":"))
     if not previous or previous["fields"]["circles"] != encoded:
-        node.write_record(SCHEMA, definition, database, {"circles": encoded}, previous)
+        node.write_record(SCHEMA, database, {"circles": encoded}, previous)
 
 
 def normalize(requests, definitions):

@@ -26,10 +26,8 @@ REFUSALS = (
     ("share_update_pending", "circle_update_pending"),
     ("mismatched sharing acknowledgement", "circle_ack_mismatch"),
     ("changed while you edited", "circle_revision_changed"),
-    ("POST /api/mutation", "circle_private_mutation_refused"),
-    ("POST /api/schemas/declare", "circle_private_schema_refused"),
-    ("POST /api/queries/batch", "circle_contact_batch_refused"),
-    ("LastDB could not read a contact", "circle_contact_read_refused"),
+    ("POST /v1/write", "circle_private_write_refused"),
+    ("POST /v1/read", "circle_private_read_refused"),
 )
 
 

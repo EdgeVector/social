@@ -6,14 +6,13 @@ import json
 import re
 from uuid import NAMESPACE_URL, UUID, uuid5
 
-from lastdb import LastDBError, SCHEMAS, SocialError, record_mutation
+from lastdb import LastDBError, SocialError, record_mutation
 from circles import DIGEST
 from request_index import RequestIndex
 from reusable_circles import confirm, encoded
 
 
 SCHEMA = "social-graph/SharingRequest"
-DEFINITION = SCHEMAS["SharingRequest"]
 # An owner's own change has no saved proposal. Its ID comes from the change,
 # so a preview and its apply agree.
 OWNER_CHANGES = uuid5(NAMESPACE_URL, "social-graph/owner-change")
@@ -59,17 +58,17 @@ class SharingRequests:
         change = parse_change(change)
         database, circle = change["databaseId"], change.get("circleId")
         declaration = {"requestId": request_id, "appId": app, "change": change}
-        definition, previous, prior = self.load(request_id)
+        previous, prior = self.load(request_id)
         if previous:
             return self.replay(declaration, prior)
         if (circle and not any(row["id"] == circle for row in self.circles())) or database not in self.reusable.owned():
             raise SocialError("select an existing circle and an owned whole-database share")
         try:
-            self.save(definition, request_id, {"declaration": declaration}, None, self.index.add(declaration))
+            self.save(request_id, {"declaration": declaration}, None, self.index.add(declaration))
         except LastDBError as error:
             if error.status != 409:
                 raise
-            _, _, prior = self.load(request_id)
+            _, prior = self.load(request_id)
             return self.replay(declaration, prior)
         return status(declaration)
 
@@ -79,20 +78,16 @@ class SharingRequests:
         return self.status(declaration["requestId"])
 
     def load(self, request_id):
-        definition = self.node.declare_private(DEFINITION)
         record = self.node.get_record(SCHEMA, uuid_key(request_id))
-        return definition, record, json.loads(record["fields"]["request"]) if record else None
+        return record, json.loads(record["fields"]["request"]) if record else None
 
-    def save(self, definition, request_id, data, previous, index_change=None):
+    def save(self, request_id, data, previous, index_change=None):
         fields = {"request": encoded(data)}
-        if index_change is None:
-            self.node.write_record(SCHEMA, definition, request_id, fields, previous)
-        else:
-            update = record_mutation(SCHEMA, definition, {"hash": request_id, "range": None}, fields, previous)
-            self.node.call("POST", "/api/mutations/batch", {"mutations": [update, index_change]})
+        update = record_mutation(SCHEMA, request_id, fields, previous)
+        self.node.write([update] if index_change is None else [update, index_change])
 
     def status(self, request_id):
-        _, _, data = self.load(request_id)
+        _, data = self.load(request_id)
         if data is None:
             raise SocialError("sharing request does not exist")
         declaration = data["declaration"]
@@ -104,7 +99,7 @@ class SharingRequests:
             return status(declaration, active)
         # A newer operation may have archived this receipt between the reads.
         if active:
-            _, _, data = self.load(request_id)
+            _, data = self.load(request_id)
         return status(declaration, data.get("receipt"))
 
     def preview(self, request_id, review=None):
@@ -138,7 +133,7 @@ class SharingRequests:
             return {**applied, "subjectName": label, "change": change, "applied": True}
 
     def review(self, request_id, review, token=None):
-        _, _, data = self.load(request_id)
+        _, data = self.load(request_id)
         if not data:
             raise SocialError("sharing request does not exist")
         request = data["declaration"]
@@ -157,7 +152,7 @@ class SharingRequests:
 
     def decline(self, request_id):
         with self.reusable.circles.lock():
-            definition, record, data = self.load(request_id)
+            record, data = self.load(request_id)
             if data is None:
                 raise SocialError("sharing request does not exist")
             request = data["declaration"]
@@ -169,7 +164,7 @@ class SharingRequests:
             if receipt or (active and active["requestId"] == request_id):
                 raise SocialError("only requests awaiting approval can be declined")
             receipt = {"status": "declined"}
-            self.save(definition, request_id, {**data, "receipt": receipt}, record, self.index.remove(request_id))
+            self.save(request_id, {**data, "receipt": receipt}, record, self.index.remove(request_id))
             return status(request, receipt)
 
     def edit(self, request, directory, review):
@@ -196,9 +191,9 @@ class SharingRequests:
     def archive(self, active):
         if not active or active["status"] != "confirmed":
             return
-        definition, record, data = self.load(active["requestId"])
+        record, data = self.load(active["requestId"])
         if data and "receipt" not in data:
-            self.save(definition, active["requestId"], {**data, "receipt": active}, record)
+            self.save(active["requestId"], {**data, "receipt": active}, record)
 
 
 def parse_change(change):
