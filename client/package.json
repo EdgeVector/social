@@ -1,6 +1,6 @@
 {
   "name": "@lastdb/social-client",
-  "version": "0.10.0",
+  "version": "0.10.1",
   "description": "Run the installed Social command from a JavaScript app.",
   "license": "Apache-2.0",
   "repository": {

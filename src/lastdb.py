@@ -4,11 +4,11 @@ Record reads and writes use the app API, `POST /v1/read` and `POST /v1/write`.
 The installer places the schemas in `lastdb-app.json`. Social does not declare
 them while it runs.
 
-The launcher sets `LASTDB_SOCKET_PATH` to the app socket and
-`LASTDB_APP_SESSION` to the session. Those two are sent on app API calls.
-Without them, Social uses the owner socket `<home>/data/folddb.sock`, which
-serves the same two routes. Sharing, database, invitation, and schema-catalog
-calls stay on `/api/...`: the app API has no route for them.
+The launcher sets `LASTDB_SOCKET_PATH` to the app socket and `LASTDB_APP` to
+the app id. The app id is sent as `X-LastDB-App` on app API calls. Without
+them, Social uses the owner socket `<home>/data/folddb.sock`, which serves
+the same two routes and gets no app id header. Sharing, database, invitation,
+and schema-catalog calls stay on `/api/...`: the app API has no route for them.
 """
 
 from __future__ import annotations
@@ -110,7 +110,7 @@ class LastDB:
         configured = os.environ.get("LASTDB_SOCKET_PATH")
         self.socket = Path(configured) if configured else self.home / "data" / "folddb.sock"
         self.executable = Path(executable).resolve()
-        self.session = os.environ.get("LASTDB_APP_SESSION")
+        self.app_id = os.environ.get("LASTDB_APP")
         self.capabilities = None
 
     def state_dir(self):
@@ -127,8 +127,8 @@ class LastDB:
         headers = {"X-LastDB-Client": "social", "Content-Type": "application/json"}
         if request_id is not None:
             headers["Idempotency-Key"] = request_id
-        if self.session and path.startswith("/v1/"):
-            headers["X-LastDB-App-Session"] = self.session
+        if self.app_id and path.startswith("/v1/"):
+            headers["X-LastDB-App"] = self.app_id
         with closing(LocalConnection(self.socket)) as connection:
             connection.request(method, path, payload, headers)
             with connection.getresponse() as response:
