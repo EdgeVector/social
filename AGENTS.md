@@ -28,9 +28,13 @@ moved here from `EdgeVector/lastdb` (`apps/social`) on 2026-11-16.
   command. A change that alters command output or behaviour must update
   the recipes in the same PR.
 - A registry listing is tied to one exact LastDB API version. `social-prepare`
-  fails with `social_dev_listing_missing_for_api` when the DEV `next` list has
-  no Social entry for the nightly's API version. The fix is to republish, not
-  to change the recipe.
+  fails when the DEV `next` list has no Social entry for the nightly's API
+  version: with `social_dev_listing_mismatch` when the list command falls back
+  to an entry for an older API version, and with
+  `social_dev_listing_missing_for_api` when it finds none. The fix is to
+  republish, not to change the recipe. `ci/publish_dev.py` does that by hand
+  from a fresh node; its docstring has the command. It is not part of the
+  workflow, and CI holds no publisher key.
 - `ci/lib/` holds the node helpers the recipes need (`support`, `node`,
   `harness`, `node_auth`, the BIP39 word list). They were carried from
   LastDB's scripts and belong to this repo now: they use only the LastDB
