@@ -24,7 +24,7 @@ on:
       mode:
         description: "Which check to run"
         type: choice
-        options: [all, social-share, social-circles, social-prepare]
+        options: [all, social-share, social-circles, social-scale, social-prepare]
         default: all
       lastdb_release:
         description: "LastDB nightly tag, for example nightly-20261116-3484b912b. Empty selects the newest published nightly"
@@ -75,8 +75,8 @@ jobs:
         run: |
           set -euo pipefail
           case "$MODE" in
-            all) modes='["social-share","social-circles","social-prepare"]' ;;
-            social-share|social-circles|social-prepare) modes="[\"$MODE\"]" ;;
+            all) modes='["social-share","social-circles","social-scale","social-prepare"]' ;;
+            social-share|social-circles|social-scale|social-prepare) modes="[\"$MODE\"]" ;;
             *) exit 2 ;;
           esac
           printf 'modes=%s\n' "$modes" >> "$GITHUB_OUTPUT"
@@ -197,6 +197,7 @@ jobs:
           case "$OPERATION" in
             social-share) recipe=social_share ;;
             social-circles) recipe=social_circles ;;
+            social-scale) recipe=social_scale ;;
             social-prepare) recipe=social_prepare ;;
             *) exit 2 ;;
           esac
