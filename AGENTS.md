@@ -9,8 +9,11 @@ moved here from `EdgeVector/lastdb` (`apps/social`) on 2026-11-16.
 - `lastdb-app.json` is the app manifest and the source of Social's private
   schema definitions.
 - `setups/shared-albums-v1/` holds the schema definitions of the
-  `shared-albums` version 1 setup. They must match `spec/social/` in
-  `EdgeVector/lastdb`.
+  `shared-albums` version 1 setup. This is the only copy of the
+  definitions. `EdgeVector/lastdb` keeps just the field names of the
+  `social` version 1 spec in `database_policy/src/lib.rs`, which decides
+  what a filtered share admits. A field added or renamed here needs the
+  same change there before a filtered share accepts it.
 
 ## Rules
 
