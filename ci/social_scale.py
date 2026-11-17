@@ -19,10 +19,10 @@ import uuid
 
 from social_app import ROOT, SETUP, observe_access, sdk, social
 from social_share import album, wait_for_album, write_album
-from support import require, retry, run_operation, summary
+from support import OperationError, require, retry, run_operation, summary
 
 sys.path.insert(0, str(ROOT / "src"))
-from lastdb import LastDB  # noqa: E402
+from lastdb import LastDB, LastDBError  # noqa: E402
 
 SMALL = 10
 MEMBERS = 3000
@@ -34,7 +34,11 @@ def owner(node):
 
 
 def configuration(node, database):
-    reply = owner(node).call("GET", f"/api/databases/{database}/share/config")
+    try:
+        reply = owner(node).call("GET", f"/api/databases/{database}/share/config")
+    except LastDBError as error:
+        # The route answers 503 until the node has confirmed its cloud state.
+        raise OperationError("social_scale_configuration_unavailable") from error
     require(reply["databaseId"] == database, "social_scale_configuration")
     return reply
 

@@ -111,7 +111,7 @@ jobs:
           tag="$LASTDB_RELEASE"
           if [ -z "$tag" ]; then
             tag="$(gh api 'repos/EdgeVector/lastdb/releases?per_page=30' \
-              --jq '[.[] | select(.draft == false and (.tag_name | startswith("nightly-")))][0].tag_name')"
+              --jq '[.[] | select(.draft == false and (.tag_name | startswith("nightly-")))] | sort_by(.published_at) | last | .tag_name')"
           fi
           [[ "$tag" =~ ^nightly-[0-9]{8}-[0-9a-f]{9}$ ]]
           release="$RUNNER_TEMP/lastdb-release"
