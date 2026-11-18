@@ -34,7 +34,7 @@ def parse_scope(text):
         return "all"
     names = sorted({name.strip() for name in text.split(",") if name.strip()})
     if not names:
-        raise SocialError("write a scope as read, all, or schema names such as social-graph/Comment")
+        raise SocialError("write a scope as read, all, or schema names such as social/Comment")
     return names
 
 

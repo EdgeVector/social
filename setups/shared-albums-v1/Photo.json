@@ -1,7 +1,7 @@
 {
-  "app_id": "social-graph",
+  "app_id": "social",
   "schema": {
-    "name": "social-graph/Photo",
+    "name": "social/Photo",
     "descriptive_name": "Photo",
     "purpose_statement": "One photo. The hash coordinate is the content hash of the original bytes.",
     "schema_type": "Hash",

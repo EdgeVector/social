@@ -1,7 +1,7 @@
 {
-  "app_id": "social-graph",
+  "app_id": "social",
   "schema": {
-    "name": "social-graph/Comment",
+    "name": "social/Comment",
     "descriptive_name": "Comment",
     "purpose_statement": "A comment on one record in any canonical database.",
     "schema_type": "HashRange",

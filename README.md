@@ -25,11 +25,12 @@ lists the extension `databases`. The JSON body carries `action`:
 | `invite` | Seal an invitation |
 | `submit`, `submission_status` | A content app submits one proposal and reads its state. Social's own commands do not call these |
 
-On the app socket, `declare_schema` does not send `app_id`. The schema name
-must be `{app id}/{name}` and that name must be in the app's write list. The
-shared-albums names are `social-graph/Album`, `social-graph/AlbumItem`,
-`social-graph/Photo`, and `social-graph/Comment`. The same call works on the
-owner socket with no app header. `declare_schema` then includes `app_id`.
+`declare_schema` sends `app_id` from the catalog on the app socket and on the
+owner socket. The app socket compares `schema.name` with the write list, so
+that field is the stored name. The shared-albums catalog uses `app_id`
+`social` and the names `social/Album`, `social/AlbumItem`, `social/Photo`,
+and `social/Comment`. Those four names are in the write list. LastDB stores
+the same names.
 
 `social` runs `lastdb share contact` and `lastdb share verify-contact` to
 check a contact file. Those commands read `--data-dir` and do not open a
@@ -73,8 +74,8 @@ ID. `CIRCLE` is a circle name or ID.
 change who can reach a database. Without `--apply` they print what would change and change nothing.
 
 ```sh
-social circle set Family --members Ana,Bea --link family=social-graph/Comment
-social circle set Family --members Ana,Bea --link family=social-graph/Comment --apply
+social circle set Family --members Ana,Bea --link family=social/Comment
+social circle set Family --members Ana,Bea --link family=social/Comment --apply
 ```
 
 A preview includes a `token`. Pass `--apply --token TOKEN` to make the change
@@ -105,21 +106,22 @@ social person add Ana --node-key "$ana_key" --contact ana.contact
 
 `social db create NAME` creates an empty share for your app's own schemas.
 Place each schema with `POST /v1/x/databases` and `"action": "declare_schema"`.
-On the app socket the body has `database`, `schema`, and optional `retention`
-and `intent`. It has no `app_id`. `schema.name` is the canonical name, such
-as `social-graph/Comment`. Put keys in `record_keys`. The route refuses a
-schema-level `key`. `retention` sits beside `schema`, not inside it. Then
-link a circle to the database.
+The body has `database`, `app_id`, `schema`, and optional `retention` and
+`intent`. `schema.name` is the stored name, such as `social/Comment`, and
+that name is in the app's write list. `app_id` is the namespace of that name.
+Put keys in `record_keys`. The route refuses a schema-level `key`.
+`retention` sits beside `schema`, not inside it. Then link a circle to the
+database.
 
 A circle is one list of people with links to any number of databases. Each
 link carries a write scope: `read`, `all`, or a comma-separated list of
-canonical schema names such as `social-graph/Comment`. Every member can read each
+canonical schema names such as `social/Comment`. Every member can read each
 whole database. Write access combines across overlapping circles. `all` also
 covers future schemas. An explicit revoke on a database stays in effect
 across later circle edits.
 
 ```sh
-social circle set Family --members Ana,Bea --link family=social-graph/Comment --link trips=read --apply
+social circle set Family --members Ana,Bea --link family=social/Comment --link trips=read --apply
 social invite family Ana --out ana-invitation.json
 ```
 
@@ -128,7 +130,7 @@ person's circle grants. A revoked person comes back only through an explicit
 `grant restore`.
 
 ```sh
-social grant set family Cal --write social-graph/Comment --apply
+social grant set family Cal --write social/Comment --apply
 social grant revoke family Cal --apply
 social grant restore family Cal --write read --apply
 ```
@@ -149,17 +151,16 @@ and downloaded record readiness separately.
 
 Compatible schema upgrades keep a grant in place. The publisher still checks
 the specific current definition and the record rules for each write. On a
-whole-database share, LastDB applies comment authorship only to the schema
-named `social/Comment`. A receiver with that write grant can create comments
-and edit comments they created. The publisher can edit or delete any comment.
-The shared-albums catalog schema is `social-graph/Comment`. That rule does
-not apply to it.
+whole-database share, a receiver with a `social/Comment` write grant can
+create comments and edit comments they created. The publisher can edit or
+delete any comment. The shared-albums catalog schema is `social/Comment`,
+so that rule applies to comments in the setup.
 
 ### Named setups
 
 `social db create family --setup shared-albums` creates a whole-database share
-and places the catalog definitions for Album, AlbumItem, Photo, and Comment
-through the `declare_schema` action. Social records the new
+and places `social/Album`, `social/AlbumItem`, `social/Photo`, and
+`social/Comment` through the `declare_schema` action. Social records the new
 database ID before placing those schemas, and resumes setup by the same name. `social db verify ID --setup shared-albums`
 checks an owned or received share by its stable ID and reports the current
 definition IDs. Add `--finish` to install missing schemas in an owned

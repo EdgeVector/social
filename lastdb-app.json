@@ -280,10 +280,10 @@
       "social-graph/SharingRequest",
       "social-graph/PendingSharingRequest",
       "social-graph/DatabaseSetup",
-      "social-graph/Album",
-      "social-graph/AlbumItem",
-      "social-graph/Photo",
-      "social-graph/Comment"
+      "social/Album",
+      "social/AlbumItem",
+      "social/Photo",
+      "social/Comment"
     ],
     "extensions": ["databases"]
   },

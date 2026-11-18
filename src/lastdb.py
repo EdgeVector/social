@@ -7,7 +7,7 @@ schemas in `lastdb-app.json`. Social does not declare those while it runs.
 The launcher sets `LASTDB_SOCKET_PATH` to the app socket and `LASTDB_APP` to
 the app id. The app id is sent as `X-LastDB-App` on `/v1/` calls. Without
 them, Social uses the owner socket `<home>/data/folddb.sock` and sends no app
-id header. `declare_schema` then includes `app_id`.
+id header. `declare_schema` sends the catalog `app_id` on either socket.
 """
 
 from __future__ import annotations

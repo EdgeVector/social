@@ -115,7 +115,7 @@ class Setups:
 
     def install(self, database_id, request):
         try:
-            self.node.databases("declare_schema", **declaration(self.node, database_id, request))
+            self.node.databases("declare_schema", **declaration(database_id, request))
         except LastDBError as error:
             if error.status != 409:
                 raise
@@ -137,13 +137,15 @@ class Setups:
         return verified
 
 
-def declaration(node, database_id, request):
-    """The declare_schema body. The app socket rejects app_id; the owner socket requires it."""
-    body = {"database": database_id, "schema": request["schema"]}
+def declaration(database_id, request):
+    """The declare_schema body. Both sockets send the catalog app_id.
+
+    The app socket allows that field and compares schema.name with the write
+    list. The catalog name is the stored name, such as social/Album.
+    """
+    body = {"database": database_id, "app_id": request["app_id"], "schema": request["schema"]}
     if "retention" in request:
         body["retention"] = request["retention"]
-    if not node.app_id:
-        body["app_id"] = request["app_id"]
     return body
 
 

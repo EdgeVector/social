@@ -12,7 +12,7 @@ from support import require, retry, run_operation, summary
 
 
 SPEC = {"name": "social", "version": 1}
-SCHEMA = "social-graph/Album"
+SCHEMA = "social/Album"
 ALBUMS = ("Before sharing", "While shared", "While revoked")
 
 
@@ -118,9 +118,7 @@ def verify_shared_albums_setup(node, name):
             and created["setupName"] == setup["setupName"] and created["version"] == 1,
             "social_named_setup_database")
     definitions = created["definitions"]
-    require(set(definitions) == {
-        "social-graph/Album", "social-graph/AlbumItem", "social-graph/Photo", "social-graph/Comment",
-    },
+    require(set(definitions) == {"social/Album", "social/AlbumItem", "social/Photo", "social/Comment"},
             "social_named_setup_definitions")
     reopened = sdk(node, "setup", **setup, databaseId=database)
     repeated = sdk(node, "setup", **setup, localName=name)

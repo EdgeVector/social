@@ -1,7 +1,7 @@
 {
-  "app_id": "social-graph",
+  "app_id": "social",
   "schema": {
-    "name": "social-graph/Album",
+    "name": "social/Album",
     "descriptive_name": "Album",
     "purpose_statement": "A titled set of photos.",
     "schema_type": "Hash",

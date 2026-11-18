@@ -90,13 +90,9 @@ def transfer(programs, root, publisher, recipient, api_key):
     report(f"Owned DEV mutation log {database} for {name} through the packaged SDK.")
     second = create_database(publisher, f"{name}-second")
     definitions = {schema: declare(publisher, database, schema) for schema in (ALBUM, COMMENT)}
-    # The owner places the schema LastDB treats as the standard comment.
-    # Social's catalog name is social-graph/Comment, which does not get that rule.
-    definition = json.loads((SETUP / "Comment.json").read_text())
-    definition["app_id"] = "social"
-    definition["schema"]["name"] = STANDARD_COMMENT
+    definition = SETUP / "Comment.json"
     definitions[STANDARD_COMMENT] = publisher.call(
-        f"/api/databases/{database}/apps/declare-schema", definition
+        f"/api/databases/{database}/apps/declare-schema", json.loads(definition.read_text())
     )["definition_id"]
     write_owned(publisher, database, *(
         mutation(schema, definitions[schema], "seed", f"Initial {schema}") for schema in (ALBUM, COMMENT)))

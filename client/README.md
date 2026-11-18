@@ -137,7 +137,7 @@ proposal.
 ## Use a named database setup
 
 Social can provision **shared-albums** version 1 with the standard
-`social-graph/Album`, `social-graph/AlbumItem`, `social-graph/Photo`, and `social-graph/Comment`
+`social/Album`, `social/AlbumItem`, `social/Photo`, and `social/Comment`
 schemas. The owner chooses a local name for provisioning. Other apps open the
 selected database by its stable ID and get the verified definitions. Record
 reads and writes then name that id in `database`.
@@ -150,7 +150,7 @@ const verified = await social.setupDatabase({
   setupName: 'shared-albums', requiredVersion: 1, databaseId: created.databaseId,
 });
 const albums = root.select(verified.databaseId);
-albums.rememberDefinition('social-graph/Album', verified.definitions['social-graph/Album']!);
+albums.rememberDefinition('social/Album', verified.definitions['social/Album']!);
 ```
 
 Verification by ID also works on a received share once it has synced its

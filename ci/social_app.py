@@ -256,11 +256,11 @@ def open_content_apps(recipient, database):
     selections = [(name, pick(recipient, SPEC, "read", database)) for name in ("album-viewer", "photo-journal")]
     require(all(selection["databaseId"] == database and selection["spec"] == SPEC
                 for _, selection in selections), "social_picker_shared_database")
-    refused = {"database": database, "schema": "social-graph/Album", "op": "create",
+    refused = {"database": database, "schema": "social/Album", "op": "create",
                "key": {"hash": "album-refused"}, "record": {"title": "refused"}}
     for app, _selection in selections:
         # The personal database is the read that omits database. It is not this share.
-        personal = read_named(recipient, app, "social-graph/Album", "album-0")
+        personal = read_named(recipient, app, "social/Album", "album-0")
         require("records" not in personal or personal["records"] == [], f"social_content_{app}_personal")
         # The roster is an owner route. A received database is not this node's share.
         content(recipient, app, "GET", f"/api/databases/{database}/share/config", status=404)
@@ -277,7 +277,7 @@ def album_records(page):
 def read_album(node, selections, database, key, title=None):
     with ThreadPoolExecutor(max_workers=2) as pool:
         pages = list(pool.map(
-            lambda item: read_named(node, item[0], "social-graph/Album", key, database), selections))
+            lambda item: read_named(node, item[0], "social/Album", key, database), selections))
     if title is None:
         return all(album_records(page) == [] for page in pages)
     return all(album_records(page) and len(album_records(page)) == 1
