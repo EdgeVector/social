@@ -13,8 +13,13 @@ export class SocialError extends Error {
   code: 'command_failed' | 'invalid_response';
 }
 
-/** The database row Social prints: LastDB's own row, returned as given. */
+/**
+ * The database row Social prints: LastDB's own row, returned as given.
+ * Name `id` as `database` on each LastDB read and write item. LastDB limits
+ * the app by the schemas it declared, not by database.
+ */
 export interface SocialDatabase {
+  /** Stable database id for the `database` field of `POST /v1/read` and `POST /v1/write`. */
   id: string;
   name?: string | null;
   kind?: string | null;

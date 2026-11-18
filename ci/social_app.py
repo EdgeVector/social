@@ -1,4 +1,4 @@
-"""Run Social's owner commands and selected-database sessions in DEV."""
+"""Run Social's owner commands and selected-database reads in DEV."""
 
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import closing
@@ -89,19 +89,30 @@ def social(node, *arguments, stdin=None, refusal=None, refusals=()):
 
 
 def pick(node, spec, intent, database):
-    """Issue an owner-approved data session for one database."""
+    """Check one database selection. The result is its id, name and spec."""
     return social(node, "pick-database", "--spec", spec["name"], "--version", str(spec["version"]),
-                  "--intent", intent, "--database", database, "--session")
+                  "--intent", intent, "--database", database)
 
 
-def scoped(node, selection, app, method, path, body=None, status=200):
-    headers = {"X-LastDB-Client": app, "X-LastDB-Database-Session": selection["databaseSession"],
-               "Content-Type": "application/json"}
+def content(node, app, method, path, body=None, status=200):
+    """One owner-socket call. The caller names a database in the body when the route takes one."""
+    headers = {"X-LastDB-Client": app, "Content-Type": "application/json"}
     with closing(Connection(node.socket)) as connection:
         connection.request(method, path, None if body is None else json.dumps(body).encode(), headers)
         with connection.getresponse() as reply:
             require(reply.status == status, f"social_content_{app}_http_{reply.status}")
             return decode_json(reply.read(65537)) if status == 200 else None
+
+
+def read_named(node, app, schema, key, database=None):
+    """Read one record. A database id is a field of the read item."""
+    item = {"schema": schema, "key": {"hash": key}}
+    if database is not None:
+        item["database"] = database
+    reply = content(node, app, "POST", "/v1/read", {"reads": [item]})
+    require(isinstance(reply.get("results"), list) and len(reply["results"]) == 1,
+            f"social_content_{app}_read")
+    return reply["results"][0]
 
 
 def open_content_apps(recipient, database):
@@ -111,22 +122,33 @@ def open_content_apps(recipient, database):
     selections = [(name, pick(recipient, SPEC, "read", database)) for name in ("album-viewer", "photo-journal")]
     require(all(selection["databaseId"] == database and selection["spec"] == SPEC
                 for _, selection in selections), "social_picker_shared_database")
-    for app, selection in selections:
-        scoped(recipient, selection, app, "POST", "/api/query", {}, status=403)
-        scoped(recipient, selection, app, "GET", f"/api/databases/{database}/share/config", status=403)
-        scoped(recipient, selection, app, "POST", f"/api/databases/{database}/mutation", {}, status=403)
+    refused = {"database": database, "schema": "social/Album", "op": "create",
+               "key": {"hash": "album-refused"}, "record": {"title": "refused"}}
+    for app, _selection in selections:
+        # The personal database is the read that omits database. It is not this share.
+        personal = read_named(recipient, app, "social/Album", "album-0")
+        require("records" not in personal or personal["records"] == [], f"social_content_{app}_personal")
+        # The roster is an owner route. A received database is not this node's share.
+        content(recipient, app, "GET", f"/api/databases/{database}/share/config", status=404)
+        # A received database is read-only on the app write route.
+        content(recipient, app, "POST", "/v1/write", {"mutations": [refused]}, status=403)
     return selections
 
 
+def album_records(page):
+    records = page.get("records") if isinstance(page, dict) else None
+    return records if isinstance(records, list) else None
+
+
 def read_album(node, selections, database, key, title=None):
-    path = f"/api/databases/{database}/query"
-    query = {"schema_name": "social/Album", "filter": {"HashKey": key}}
     with ThreadPoolExecutor(max_workers=2) as pool:
-        results = list(pool.map(lambda item: scoped(node, item[1], item[0], "POST", path, query), selections))
+        pages = list(pool.map(
+            lambda item: read_named(node, item[0], "social/Album", key, database), selections))
     if title is None:
-        return all(reply["results"] == [] for reply in results)
-    return all(len(reply["results"]) == 1 and reply["results"][0]["fields"]["title"] == title
-               for reply in results)
+        return all(album_records(page) == [] for page in pages)
+    return all(album_records(page) and len(album_records(page)) == 1
+               and album_records(page)[0].get("record", {}).get("title") == title
+               for page in pages)
 
 
 def observe_access(node, database, state, revision=None, *, role="read", write_schemas=None):

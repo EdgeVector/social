@@ -75,7 +75,6 @@ def publish():
                    "--channel", "next", "--manifest", str(ROOT / "lastdb-app.json")]
         with running(node):
             lastdb = LastDB(home, programs.directory / "lastdb")
-            lastdb.require_sessions()
             app = SocialApp(lastdb)
             app.home()
             app.sharing.pending_edit("registry-preflight")

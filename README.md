@@ -202,11 +202,10 @@ schema grants, and the publisher's authority to approve each mutation.
 ## Choosing a database for an app
 
 `social pick-database --spec social --version 1 --intent read` lists the
-databases that match. Add `--database ID` to check one selection, and
-`--session` to issue a short-lived `databaseSession` for it. A client uses the
-selected ID with the normal LastDB data API and sends that value in
-`X-LastDB-Database-Session`. Keep the session out of logs. The node limits a
-session to the selected database and its approved operation.
+databases that match. Add `--database ID` to check one selection. The command
+returns that database's id, name, and spec. The app names that id in the
+`database` field of each `POST /v1/read` and `POST /v1/write` item. LastDB
+limits an app by the schemas it declared, not by database.
 
 JavaScript and TypeScript apps use [`@lastdb/social-client`](client/README.md)
 in `client/`. Its `socialClient` runs these commands and checks their output.

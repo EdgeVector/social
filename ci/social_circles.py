@@ -62,12 +62,11 @@ def wait_text(node, database, schema, key, text, stage):
           lambda rows: len(rows) == 1 and rows[0]["fields"]["text"] == text)
 
 
-def submit(node, database, session, update, *, mutation_id=None):
+def submit(node, database, update, *, mutation_id=None):
     mutation_id = mutation_id or str(uuid.uuid4())
     with closing(Connection(node.socket)) as connection:
         connection.request("POST", f"/api/databases/{database}/mutation", json.dumps(update), {
             "Content-Type": "application/json", "Idempotency-Key": mutation_id,
-            "X-LastDB-Database-Session": session,
         })
         with connection.getresponse() as reply:
             require(reply.status == 202, f"circle_write_http_{reply.status}_expected_202")
@@ -358,8 +357,8 @@ def verify_settled_retry(publisher, recipient, database, scope, update, mutation
     pending = inbox(publisher, scope, database, 1)
     require(not pending["entries"], "circle_retry_starts_with_settled_inbox")
     published = published_views(recipient, scope, database, 1)
-    session = pick(recipient, SCOPE, "write", database)["databaseSession"]
-    submit(recipient, database, session, update, mutation_id=mutation_id)
+    require(pick(recipient, SCOPE, "write", database)["databaseId"] == database, "circle_picker_write")
+    submit(recipient, database, update, mutation_id=mutation_id)
     results = sdk(recipient, "submission-status", database=database, ids=[mutation_id])
     require([row["status"] for row in results] == ["published"], "circle_retry_preserves_outcome")
     require(inbox(publisher, scope, database, 1) == pending, "circle_retry_does_not_enqueue")
@@ -368,12 +367,12 @@ def verify_settled_retry(publisher, recipient, database, scope, update, mutation
 
 
 def queue_and_restart(publisher, recipient, database, scope, revision, updates, *, check_status=False):
-    session = pick(recipient, SCOPE, "write", database)["databaseSession"]
+    require(pick(recipient, SCOPE, "write", database)["databaseId"] == database, "circle_picker_write")
     publisher.stop()
     try:
         require(not inbox(publisher, scope, database, revision)["entries"], "circle_empty_inbox")
         published_before = published_views(recipient, scope, database, revision)
-        queued = [submit(recipient, database, session, update) for update in updates]
+        queued = [submit(recipient, database, update) for update in updates]
         if check_status:
             results = sdk(recipient, "submission-status", database=database, ids=queued)
             require(all(row["status"] == "submitted" for row in results), "circle_sdk_proposals_pending")

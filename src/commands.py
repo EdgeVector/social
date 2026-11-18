@@ -134,18 +134,13 @@ def request_decline(app, args):
 
 def pick_database(app, args):
     spec = {"name": args.spec, "version": args.version}
-    if args.session:
-        if not args.database:
-            raise SocialError("--session requires an explicit database selection")
-        return app.approve_pick(spec, args.intent, args.database)
     return app.pick(spec, args.intent, args.database) if args.database else app.picker(spec, args.intent)
 
 
 def check(app, _args):
-    # The restricted launcher and the install probe use the app socket.
-    # GET /api/version is an owner route, so it is checked only on that socket.
+    # GET /api/version is an owner route. The install probe uses the app socket.
     if not os.environ.get("LASTDB_SOCKET_PATH"):
-        app.node.require_sessions()
+        app.node.call("GET", "/api/version")
     return {"ready": True}
 
 

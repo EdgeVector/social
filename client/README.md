@@ -36,8 +36,10 @@ row Social prints, which is LastDB's own database row; `id` is always present.
 ## Share an app's own database
 
 Create an empty named whole-database share when your app owns the schemas.
-Save the stable database ID and declare the app's schemas with the selected
-LastDB client. For standard album and comment schemas, use the setup below.
+Save the stable database ID. Declare the app's schemas on that database, and
+name the same id in the `database` field of each LastDB read and write.
+LastDB limits the app by the schemas it declared, not by database. For
+standard album and comment schemas, use the setup below.
 
 ```ts
 import { join } from 'node:path';
@@ -75,12 +77,16 @@ const recipient = await connect({
 });
 
 // Wait for this ID to be ready in listDatabases() before reading its content.
-const { client: sharedTrips } = await recipient.openDatabaseSession(received.id, 'read');
-const trip = await sharedTrips.get('photo-journal/Trip', tripKey);
+const [page] = await recipient.read([{
+  database: received.id,
+  schema: 'photo-journal/Trip',
+  key: { hash: tripKey },
+}]);
+const trip = page.records?.[0];
 ```
 
-Use the same ID when another app opens this share on Ana's device. The owner
-can manage access in Social or revoke a recipient with
+Use the same id in the `database` field when another app reads this share on
+Ana's device. The owner can manage access in Social or revoke a recipient with
 `await social.revokeAccess(database.id, anaVerifiedKey)`.
 
 ## Propose circle sharing
@@ -125,8 +131,8 @@ proposal.
 Social can provision **shared-albums** version 1 with the standard
 `social/Album`, `social/AlbumItem`, `social/Photo`, and `social/Comment`
 schemas. The owner chooses a local name for provisioning. Other apps open the
-selected database by its stable ID and get the verified definitions before
-using the ordinary record APIs.
+selected database by its stable ID and get the verified definitions. Record
+reads and writes then name that id in `database`.
 
 ```ts
 const created = await social.setupDatabase({

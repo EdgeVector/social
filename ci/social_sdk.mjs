@@ -49,8 +49,16 @@ try {
       break;
     case 'read': {
       const root = await connect({ appId: input.appId ?? 'social-dev-sdk', socketPath: join(dataDir, 'data', 'folddb.sock') });
-      const { client } = await root.openDatabaseSession(input.database, 'read');
-      result = await client.get(input.schema, input.key);
+      const [page] = await root.read([{
+        database: input.database,
+        schema: input.schema,
+        key: { hash: input.key },
+      }]);
+      if (!page || page.error || !Array.isArray(page.records) || page.records.length !== 1) {
+        throw new Error('read failed');
+      }
+      const row = page.records[0];
+      result = { fields: row.record, revision: row.revision, key: row.key };
       break;
     }
     case 'list-databases': {
@@ -60,7 +68,7 @@ try {
     }
     case 'submission-status': {
       const root = await connect({ appId: 'social-dev-sdk', socketPath: join(dataDir, 'data', 'folddb.sock') });
-      const { client } = await root.openDatabaseSession(input.database, 'read');
+      const client = root.select(input.database);
       result = await Promise.all(input.ids.map(id => client.getShareSubmissionStatus(id)));
       break;
     }

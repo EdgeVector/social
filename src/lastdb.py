@@ -200,10 +200,6 @@ class LastDB:
             self.capabilities = self.call("GET", "/api/version").get("capabilities", {})
         return self.capabilities.get(capability) is True
 
-    def require_sessions(self):
-        if not self.supports("database_sessions_v1"):
-            raise SocialError("Social needs a LastDB build with database sessions")
-
     def require_named_grants(self):
         if not self.supports("named_schema_write_grants_v1"):
             raise SocialError("circles need a LastDB build with grants by schema name")

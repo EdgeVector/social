@@ -214,14 +214,6 @@ class SocialApp:
                 return {key: choice[key] for key in ("databaseId", "name", "spec")}
         raise SocialError("this database cannot be selected for the requested use")
 
-    def approve_pick(self, spec, intent, database_id):
-        selection = self.pick(spec, intent, database_id)
-        result = self.node.call("POST", "/api/databases/session", {
-            "databaseId": database_id, "intent": intent,
-        })
-        return {**selection, "databaseSession": result["session"],
-                "expiresInSeconds": result["expiresInSeconds"]}
-
 
 def require_node_key(key):
     if not isinstance(key, str) or not NODE_KEY.fullmatch(key):
