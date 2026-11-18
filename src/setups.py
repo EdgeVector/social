@@ -117,8 +117,7 @@ class Setups:
 
     def install(self, database_id, request):
         try:
-            self.node.call("POST", f"/api/databases/{database_id}/schemas/declare",
-                           {**request, "install_if_missing": True})
+            self.node.call("POST", f"/api/databases/{database_id}/apps/declare-schema", request)
         except LastDBError as error:
             if error.status != 409:
                 raise
@@ -140,7 +139,7 @@ class Setups:
 
 
 def matches(row, request):
-    if not row or row.get("state") != "Available" or row.get("owner_app_id") != request["namespace"]:
+    if not row or row.get("state") != "Available" or row.get("owner_app_id") != request["app_id"]:
         return False
     definition = row.get("definition_id")
     expected = request["schema"]

@@ -80,7 +80,7 @@ def transfer(programs, root, publisher, recipient, api_key):
     summary(f"Owned DEV mutation log `{database}` for `{name}`.")
     print(f"Social DEV database {database}", flush=True)
     schema = json.loads((SETUP / "Album.json").read_text())
-    publisher.call(f"/api/databases/{database}/schemas/declare", schema)
+    publisher.call(f"/api/databases/{database}/apps/declare-schema", schema)
     write_album(publisher, database, 0)
     # Enroll the stopped publisher and verify the next boot, as in social_circles.
     # Live enrollment can re-exec the daemon with the same PID and a new start time.
@@ -139,7 +139,7 @@ def verify_shared_albums_setup(node, name):
     schema["schema"]["fields"].append("event_label")
     schema["schema"]["field_types"]["event_label"] = "String"
     schema["schema"]["field_descriptions"]["event_label"] = "Optional label for the occasion."
-    upgraded = node.call(f"/api/databases/{database}/schemas/declare", schema)["definition_id"]
+    upgraded = node.call(f"/api/databases/{database}/apps/declare-schema", schema)["definition_id"]
     reopened = sdk(node, "setup", **setup, databaseId=database)
     require(reopened["databaseId"] == database and reopened["definitions"][SCHEMA] == upgraded
             and definitions[SCHEMA] != upgraded, "social_named_setup_compatible_expansion")

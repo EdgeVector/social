@@ -77,7 +77,12 @@ social person add Ana --node-key "$ana_key" --contact ana.contact
 ## Whole-database sharing
 
 `social db create NAME` creates an empty share for your app's own schemas.
-Install the schemas through LastDB, then link a circle to the database.
+Place each schema on the owner socket with
+`POST /api/databases/{id}/apps/declare-schema`. The body has `app_id` and
+`schema`. `schema.name` is the canonical name, such as `social/Comment`, or a
+bare name that LastDB places under `app_id`. Put keys in `record_keys`. The
+route refuses a schema-level `key`. `retention`, when present, sits beside
+`schema`. Then link a circle to the database.
 
 A circle is one list of people with links to any number of databases. Each
 link carries a write scope: `read`, `all`, or a comma-separated list of
@@ -124,9 +129,9 @@ delete any comment.
 ### Named setups
 
 `social db create family --setup shared-albums` creates a whole-database share
-with the catalog definitions for Album, AlbumItem, Photo, and Comment already
-installed. Social records the new database ID before installing schemas and
-resumes setup by the same name. `social db verify ID --setup shared-albums`
+and places the catalog definitions for Album, AlbumItem, Photo, and Comment
+through `POST /api/databases/{id}/apps/declare-schema`. Social records the new
+database ID before placing those schemas, and resumes setup by the same name. `social db verify ID --setup shared-albums`
 checks an owned or received share by its stable ID and reports the current
 definition IDs. Add `--finish` to install missing schemas in an owned
 database. Additive schema updates can introduce more fields under the same

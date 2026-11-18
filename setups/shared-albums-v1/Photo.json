@@ -1,5 +1,5 @@
 {
-  "namespace": "social",
+  "app_id": "social",
   "schema": {
     "name": "Photo",
     "descriptive_name": "Photo",

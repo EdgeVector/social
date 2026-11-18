@@ -71,7 +71,7 @@ def scale(programs, root, publisher, recipient, api_key):
     summary(f"Owned DEV mutation log `{database}` for `{name}`.")
     print(f"Social DEV scale database {database}", flush=True)
     schema = json.loads((SETUP / "Album.json").read_text())
-    publisher.call(f"/api/databases/{database}/schemas/declare", schema)
+    publisher.call(f"/api/databases/{database}/apps/declare-schema", schema)
     write_album(publisher, database, 0)
     publisher.stop()
     connected = programs.command(publisher.home, [

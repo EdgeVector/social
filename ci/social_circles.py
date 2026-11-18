@@ -32,12 +32,12 @@ REFUSALS = (
 
 
 def declare(node, database, schema, *, expanded=False):
-    namespace, name = schema.split("/")
+    app_id, name = schema.split("/")
     fields = {"text": "Sample text."}
     if expanded:
         fields["caption"] = "Optional caption on the same record."
-    return node.call(f"/api/databases/{database}/schemas/declare", {
-        "namespace": namespace, "schema": {
+    return node.call(f"/api/databases/{database}/apps/declare-schema", {
+        "app_id": app_id, "schema": {
             "name": name, "descriptive_name": name, "purpose_statement": f"Disposable DEV {name} record.",
             "schema_type": "Hash", "record_keys": {"primary": {"kind": "hash"}, "alternates": {}},
             "fields": list(fields), "field_types": dict.fromkeys(fields, "String"), "field_descriptions": fields,
@@ -88,7 +88,7 @@ def transfer(programs, root, publisher, recipient, api_key):
     definitions = {schema: declare(publisher, database, schema) for schema in (ALBUM, COMMENT)}
     definition = SETUP / "Comment.json"
     definitions[STANDARD_COMMENT] = publisher.call(
-        f"/api/databases/{database}/schemas/declare", json.loads(definition.read_text())
+        f"/api/databases/{database}/apps/declare-schema", json.loads(definition.read_text())
     )["definition_id"]
     write_owned(publisher, database, *(
         mutation(schema, definitions[schema], "seed", f"Initial {schema}") for schema in (ALBUM, COMMENT)))
