@@ -7,7 +7,7 @@ import time
 import uuid
 
 from social_app import (SETUP, install, observe_access, open_content_apps, pick, read_album,
-                        report_content_flow, sdk, social)
+                        read_records, report_content_flow, sdk, social, write_owned)
 from support import require, retry, run_operation, summary
 
 
@@ -17,17 +17,13 @@ ALBUMS = ("Before sharing", "While shared", "While revoked")
 
 
 def album(node, database, index):
-    return node.call(f"/api/databases/{database}/query", {
-        "schema_name": SCHEMA,
-        "filter": {"HashKey": f"album-{index}"},
-    })["results"]
+    return read_records(node, database, SCHEMA, [f"album-{index}"])
 
 
-def write_album(node, database, definition, index):
-    node.call(f"/api/databases/{database}/mutation", {
-        "type": "mutation", "schema": SCHEMA, "definition_id": definition,
-        "key_value": {"hash": f"album-{index}", "range": None}, "alternates": {},
-        "mutation_type": "create", "expected": {"type": "absent"},
+def write_album(node, database, index):
+    """Create one album in a database this node owns. POST /v1/write."""
+    write_owned(node, database, {
+        "schema": SCHEMA, "key_value": {"hash": f"album-{index}"}, "mutation_type": "create",
         "record": {"title": ALBUMS[index], "description": "Generated DEV record",
                    "cover_photo_id": "none", "created_at": "2026-11-13T00:00:00Z"},
     })
@@ -84,8 +80,8 @@ def transfer(programs, root, publisher, recipient, api_key):
     summary(f"Owned DEV mutation log `{database}` for `{name}`.")
     print(f"Social DEV database {database}", flush=True)
     schema = json.loads((SETUP / "Album.json").read_text())
-    definition = publisher.call(f"/api/databases/{database}/schemas/declare", schema)["definition_id"]
-    write_album(publisher, database, definition, 0)
+    publisher.call(f"/api/databases/{database}/schemas/declare", schema)
+    write_album(publisher, database, 0)
     # Enroll the stopped publisher and verify the next boot, as in social_circles.
     # Live enrollment can re-exec the daemon with the same PID and a new start time.
     publisher.stop()
@@ -110,7 +106,7 @@ def transfer(programs, root, publisher, recipient, api_key):
     person = social(publisher, "person", "add", "Ana", "--node-key", reader_key, "--contact", str(contact))
     require(person == {"name": "Ana", "nodeKey": reader_key}
             and person in social(publisher, "person", "list"), "social_app_saved_contact")
-    share_albums(publisher, recipient, name, database, definition, reader_key, publisher_key)
+    share_albums(publisher, recipient, name, database, reader_key, publisher_key)
     check_role_and_overview(programs, root, publisher, database, name, contact, reader_key)
 
 
@@ -133,7 +129,7 @@ def verify_shared_albums_setup(node, name):
             and recovered["definitions"] == definitions, "social_named_setup_repaired_by_id")
     social(node, "db", "verify", database, "--setup", setup["setupName"], "--version", "2",
            refusal=b"supported Social database setup")
-    write_album(node, database, definitions[SCHEMA], 0)
+    write_album(node, database, 0)
     selections = [(app, pick(node, {"name": "whole-database", "version": 1}, "read", database))
                   for app in ("album-viewer", "photo-journal")]
     require(all(selection["databaseId"] == database for _, selection in selections)
@@ -154,7 +150,7 @@ def verify_shared_albums_setup(node, name):
     summary(message)
 
 
-def share_albums(publisher, recipient, name, database, definition, reader_key, publisher_key):
+def share_albums(publisher, recipient, name, database, reader_key, publisher_key):
     try:
         receipt = sdk(publisher, "invite", database=name, recipient={"name": "Ana", "nodeKey": reader_key})
         require(receipt["databaseId"] == database and receipt["publisher"] == publisher_key and receipt["revision"] == "1",
@@ -174,12 +170,12 @@ def share_albums(publisher, recipient, name, database, definition, reader_key, p
         grants = social(publisher, "grant", "list", database)
         require(len(grants) == 1 and grants[0]["user"] == "Ana", "social_remembers_contact")
         share(publisher, database, None, reader_key, 1)
-        write_album(publisher, database, definition, 1)
+        write_album(publisher, database, 1)
         wait_for_album(recipient, database, 1)
         require(read_album(recipient, selections, database, "album-1", ALBUMS[1]), "social_apps_second_album")
         require(sdk(publisher, "revoke", database=name, nodeKey=reader_key) == "2", "social_sdk_revoke")
         expect_roster(publisher, database, 2, {"nodeKey": reader_key, "role": "read", "state": "revoked"})
-        write_album(publisher, database, definition, 2)
+        write_album(publisher, database, 2)
         for _ in range(12):
             require(album(recipient, database, 2) == [], "social_revoked_read_new_album")
             time.sleep(1)

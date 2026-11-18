@@ -12,8 +12,7 @@ import time
 
 SOCKET_OPERATIONS = {
     "/health": "health", "/api/status": "status", "/api/system/boot-identity": "boot_identity",
-    "/api/db/native-status": "native_status", "/api/queries/batch": "query_batch",
-    "/api/mutations/batch": "mutation_batch",
+    "/api/db/native-status": "native_status",
 }
 SOCKET_REFUSALS = frozenset({
     "cas_conflict", "compaction_behind", "field_value_too_large", "persist_queue_full",

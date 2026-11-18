@@ -8,7 +8,7 @@ import sys
 import uuid
 
 from node import Connection
-from social_app import SETUP, install, observe_access, pick, sdk, social
+from social_app import SETUP, install, observe_access, pick, read_records, sdk, social, write_owned
 from social_declarations import configure_bindings, external_changes, independent_update, revoke_roster
 from social_log_views import inbox, pending_positions, published_views, scope_for
 from support import OperationError, decode_json, require, retry, run_operation, summary
@@ -52,9 +52,7 @@ def mutation(schema, definition, key, text):
 
 
 def query(node, database, schema, key):
-    return node.call(f"/api/databases/{database}/query", {
-        "schema_name": schema, "filter": {"HashKey": key},
-    })["results"]
+    return read_records(node, database, schema, [key])
 
 
 def wait_text(node, database, schema, key, text, stage):
@@ -65,13 +63,16 @@ def wait_text(node, database, schema, key, text, stage):
 def submit(node, database, update, *, mutation_id=None):
     mutation_id = mutation_id or str(uuid.uuid4())
     with closing(Connection(node.socket)) as connection:
-        connection.request("POST", f"/api/databases/{database}/mutation", json.dumps(update), {
+        connection.request("POST", f"/api/databases/{database}/submissions", json.dumps(update), {
             "Content-Type": "application/json", "Idempotency-Key": mutation_id,
         })
         with connection.getresponse() as reply:
-            require(reply.status == 202, f"circle_write_http_{reply.status}_expected_202")
+            require(reply.status == 202, f"circle_submission_http_{reply.status}_expected_202")
             body = decode_json(reply.read(65537))
-    require(body["mutation_id"] == mutation_id and body["status"] == "submitted", "circle_submission_receipt")
+    sequence = body.get("submission_sequence")
+    require(body.get("ok") is True and body.get("mutation_id") == mutation_id
+            and body.get("status") == "submitted" and type(sequence) is int and sequence > 0,
+            "circle_submission_receipt")
     return mutation_id
 
 
@@ -89,11 +90,10 @@ def transfer(programs, root, publisher, recipient, api_key):
     definitions[STANDARD_COMMENT] = publisher.call(
         f"/api/databases/{database}/schemas/declare", json.loads(definition.read_text())
     )["definition_id"]
-    for schema in (ALBUM, COMMENT):
-        publisher.call(f"/api/databases/{database}/mutation",
-                       mutation(schema, definitions[schema], "seed", f"Initial {schema}"))
+    write_owned(publisher, database, *(
+        mutation(schema, definitions[schema], "seed", f"Initial {schema}") for schema in (ALBUM, COMMENT)))
     definition = declare(publisher, second, COMMENT)
-    publisher.call(f"/api/databases/{second}/mutation", mutation(COMMENT, definition, "seed", "Second database"))
+    write_owned(publisher, second, mutation(COMMENT, definition, "seed", "Second database"))
     # Enroll the stopped publisher, then record its connected boot identity.
     # Enrolling a running node can re-exec it to enable local capture.
     publisher.stop()
@@ -137,13 +137,13 @@ def share_with_circle(publisher, recipient, database, second, definitions, scope
     receipt = sdk(publisher, "seal", database=database, nodeKey=reader)
     require(receipt["publisher"] == sender and receipt["databaseId"] == database
             and receipt["revision"] == "1", "circle_sdk_sealed_invitation")
-    exercise(publisher, recipient, database, receipt, definitions, scope, reader)
+    exercise(publisher, recipient, database, receipt, definitions, scope)
     exercise_comment_ownership(publisher, recipient, database, definitions[STANDARD_COMMENT], scope, reader)
     second_receipt = social(publisher, "invite", second, reader)
     social(recipient, "db", "accept", "--publisher", sender, "--name", "second", stdin=second_receipt)
     wait_text(recipient, second, COMMENT, "seed", "Second database", "circle_second_database_read")
     observe_access(recipient, second, "active", 1, write_schemas=[])
-    definitions[COMMENT] = exercise_upgrade(publisher, recipient, database, definitions[COMMENT], scope, sender)
+    definitions[COMMENT] = exercise_upgrade(publisher, recipient, database, definitions[COMMENT], scope)
     read_links = ("--link", f"{database}=read", "--link", f"{second}={COMMENT}")
     preview = social(publisher, "circle", "set", "Family", *read_links)
     social(publisher, "grant", "revoke", second, reader, "--apply")
@@ -202,7 +202,7 @@ def connect(programs, publisher, api_key):
             and receipt["credentials_saved"] is True, "circle_dev_connection")
 
 
-def exercise(publisher, recipient, database, receipt, definitions, scope, reader):
+def exercise(publisher, recipient, database, receipt, definitions, scope):
     accepted = sdk(recipient, "accept", receipt=receipt, publisher=receipt["publisher"], name="family")
     require(accepted["id"] == database and accepted["sharingMode"] == "whole_database", "circle_received_database")
     for schema in (ALBUM, COMMENT):
@@ -232,9 +232,7 @@ def exercise(publisher, recipient, database, receipt, definitions, scope, reader
         wait_text(node, database, COMMENT, "allowed", "From Ana", "circle_authorized_write_applied")
         require(not query(node, database, ALBUM, "blocked"), "circle_forbidden_write_missing")
         wait_text(node, database, COMMENT, "seed", f"Initial {COMMENT}", "circle_invalid_create_discarded")
-    stored = query(publisher, database, COMMENT, "allowed")[0]
-    require(stored["metadata"]["metadata"]["share_author"] == reader, "circle_comment_author_from_sender")
-    message = "The publisher set the new Comment's author from its verified sender and discarded the Album and invalid Comment mutations."
+    message = "The publisher kept Ana's Comment and discarded the Album write and the create that targeted the seed."
     print(message, flush=True)
     summary(message)
 
@@ -252,10 +250,9 @@ def standard_comment(database, definition, key, text, author):
 
 
 def standard_rows(node, database):
-    rows = node.call(f"/api/databases/{database}/query", {
-        "schema_name": STANDARD_COMMENT,
-        "filter": {"HashRangeKeys": [["seed-album", "publisher"], ["seed-album", "receiver"]]},
-    })["results"]
+    rows = read_records(node, database, STANDARD_COMMENT, [
+        {"hash": "seed-album", "range": "publisher"}, {"hash": "seed-album", "range": "receiver"},
+    ])
     return {row["key"]["range"]: row for row in rows}
 
 
@@ -274,10 +271,9 @@ def exercise_comment_ownership(publisher, recipient, database, definition, scope
     author = hashlib.sha256(reader.encode()).hexdigest()
     owner_comment = standard_comment(database, definition, "publisher", "Publisher wrote this", author)
     mine = standard_comment(database, definition, "receiver", "Ana wrote this", "spoofed-author")
-    # Neither publisher-controlled record metadata nor a matching author field grants ownership.
-    owner_comment["metadata"] = {"share_author": reader}
-    path = f"/api/databases/{database}/mutation"
-    publisher.call(path, owner_comment)
+    # A matching author_id does not make Ana the owner. POST /v1/write has no metadata field,
+    # so the publisher's own record cannot carry a share_author either.
+    write_owned(publisher, database, owner_comment)
     queue_and_restart(publisher, recipient, database, scope, 1, [mine])
     expected = {"publisher": "Publisher wrote this", "receiver": "Ana wrote this"}
     for node in (publisher, recipient):
@@ -286,7 +282,7 @@ def exercise_comment_ownership(publisher, recipient, database, definition, scope
         require(rows["receiver"]["fields"]["author_id"] == author, "standard_verified_author")
 
     current = standard_rows(publisher, database)["receiver"]
-    publisher.call(path, {**replace_comment(mine, current, "Moderated by publisher"), "metadata": {}})
+    write_owned(publisher, database, replace_comment(mine, current, "Moderated by publisher"))
     expected["receiver"] = "Moderated by publisher"
     rows = retry("standard_publisher_edit_visible", lambda: standard_rows(recipient, database),
                  lambda rows: texts(rows) == expected)
@@ -303,18 +299,15 @@ def exercise_comment_ownership(publisher, recipient, database, definition, scope
     report("Ana read both standard comments, created and edited her own, and kept her verified author ID. The publisher discarded her deletion and her edit to the publisher's comment.")
 
 
-def exercise_upgrade(publisher, recipient, database, previous, scope, sender):
+def exercise_upgrade(publisher, recipient, database, previous, scope):
     new = declare(publisher, database, COMMENT, expanded=True)
     require(new != previous, "circle_schema_upgrade_new_definition")
     seeded = mutation(COMMENT, new, "upgrade", "Before edit")
     seeded["record"]["caption"] = "Keep the optional field"
-    seeded["source_file_name"] = "dev-comment-import.txt"
-    seeded["metadata"] = {"import_origin": "publisher", "share_author": sender}
-    publisher.call(f"/api/databases/{database}/mutation", seeded)
+    write_owned(publisher, database, seeded)
     wait_text(recipient, database, COMMENT, "upgrade", "Before edit", "circle_upgraded_record_received")
     observe_access(recipient, database, "active", 1, role="submit", write_schemas=COMMENT_GRANT)
     current = query(recipient, database, COMMENT, "upgrade")[0]
-    require(current.get("metadata") is None, "circle_publisher_metadata_private")
     update = mutation(COMMENT, new, "upgrade", "After edit")
     update.update(mutation_type="replace", expected={"type": "revision", "revision": current["revision"]},
                   record={**current["fields"], "text": "After edit"},
@@ -326,10 +319,7 @@ def exercise_upgrade(publisher, recipient, database, previous, scope, sender):
         require(query(node, database, COMMENT, "upgrade")[0]["fields"] == update["record"],
                 "circle_upgraded_fields_preserved")
         wait_text(node, database, COMMENT, "allowed", "From Ana", "circle_old_records_preserved")
-    stored = query(publisher, database, COMMENT, "upgrade")[0]["metadata"]
-    require(stored["source_file_name"] == seeded["source_file_name"] and stored["metadata"] == seeded["metadata"],
-            "circle_publisher_metadata_preserved")
-    report("Ana edited the upgraded Comment at the same sharing revision. The added field, older record, and publisher metadata remained. The publisher discarded the stale edit.")
+    report("Ana edited the upgraded Comment at the same sharing revision. The added field and the older record remained. The publisher discarded the stale edit.")
     return new
 
 

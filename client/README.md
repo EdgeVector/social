@@ -85,6 +85,13 @@ const [page] = await recipient.read([{
 const trip = page.records?.[0];
 ```
 
+A change to that received database is not a write. `@lastdb/app-sdk`'s
+`submitProposal` posts one mutation document to
+`POST /api/databases/{id}/submissions` with the proposal id in
+`Idempotency-Key`. The call does not write a record locally. Show the change
+as pending from `getShareSubmissionStatus` until the publisher accepts it.
+`POST /v1/write` to a received database is refused.
+
 Use the same id in the `database` field when another app reads this share on
 Ana's device. The owner can manage access in Social or revoke a recipient with
 `await social.revokeAccess(database.id, anaVerifiedKey)`.

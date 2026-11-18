@@ -71,8 +71,8 @@ def scale(programs, root, publisher, recipient, api_key):
     summary(f"Owned DEV mutation log `{database}` for `{name}`.")
     print(f"Social DEV scale database {database}", flush=True)
     schema = json.loads((SETUP / "Album.json").read_text())
-    definition = publisher.call(f"/api/databases/{database}/schemas/declare", schema)["definition_id"]
-    write_album(publisher, database, definition, 0)
+    publisher.call(f"/api/databases/{database}/schemas/declare", schema)
+    write_album(publisher, database, 0)
     publisher.stop()
     connected = programs.command(publisher.home, [
         "backup", "connect", "--existing", "--env", "dev", "--api-key-stdin",
@@ -119,13 +119,13 @@ def scale(programs, root, publisher, recipient, api_key):
         # with the member set. The margin covers ordinary network variation.
         require(large_seconds < small_seconds * 5 + 5, "social_scale_member_change_grew")
 
-        write_album(publisher, database, definition, 1)
+        write_album(publisher, database, 1)
         wait_for_album(recipient, database, 1)
         observe_access(recipient, database, "active")
 
         timed_revoke(publisher, database, reader_key)
         revoked = True
-        write_album(publisher, database, definition, 2)
+        write_album(publisher, database, 2)
         for _ in range(12):
             require(album(recipient, database, 2) == [], "social_scale_revoked_read_new_album")
             time.sleep(1)

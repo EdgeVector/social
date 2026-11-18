@@ -115,6 +115,62 @@ def read_named(node, app, schema, key, database=None):
     return reply["results"][0]
 
 
+def record_key(key):
+    """A hash key, plus a range when the record has one."""
+    if isinstance(key, str):
+        return {"hash": key}
+    body = {"hash": key["hash"]}
+    if key.get("range"):
+        body["range"] = key["range"]
+    return body
+
+
+def read_records(node, database, schema, keys):
+    """Keyed reads of one schema. POST /v1/read names the database on each item."""
+    reads = [{"database": database, "schema": schema, "key": record_key(key)} for key in keys]
+    pages = node.call("/v1/read", {"reads": reads}).get("results")
+    require(isinstance(pages, list) and len(pages) == len(keys), "record_read_pages")
+    rows = []
+    for page in pages:
+        records = page.get("records") if isinstance(page, dict) and "error" not in page else None
+        require(isinstance(records, list), "record_read_page")
+        for record in records:
+            fields = record.get("record") if isinstance(record, dict) else None
+            revision = record.get("revision") if isinstance(record, dict) else None
+            require(isinstance(fields, dict) and isinstance(revision, str) and revision, "record_read_row")
+            rows.append({"key": record.get("key"), "revision": revision, "fields": fields,
+                         "file": record.get("file")})
+    return rows
+
+
+def write_owned(node, database, *updates):
+    """Write records in a database this node owns.
+
+    POST /v1/write takes op, key, record, and revision. It has no definition
+    id, source file name, or metadata. A received database is not this route:
+    a proposal is POST /api/databases/{id}/submissions.
+    """
+    mutations = [owned_item(database, update) for update in updates]
+    reply = node.call("/v1/write", {"mutations": mutations})
+    revisions = reply.get("revisions")
+    require(reply.get("written") == len(mutations) and isinstance(revisions, list)
+            and len(revisions) == len(mutations)
+            and all(isinstance(item, str) and item for item in revisions), "owned_write_receipt")
+    return revisions
+
+
+def owned_item(database, update):
+    op = update["mutation_type"]
+    item = {"database": database, "schema": update["schema"], "op": op,
+            "key": record_key(update["key_value"])}
+    if op != "delete":
+        item["record"] = update["record"]
+        item["alternates"] = update.get("alternates") or {}
+    if op != "create":
+        item["revision"] = update["expected"]["revision"]
+    return item
+
+
 def open_content_apps(recipient, database):
     choices = social(recipient, "pick-database", "--spec", SPEC["name"], "--version", str(SPEC["version"]),
                      "--intent", "read")
