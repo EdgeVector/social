@@ -36,8 +36,10 @@ row Social prints, which is LastDB's own database row; `id` is always present.
 ## Share an app's own database
 
 Create an empty named whole-database share when your app owns the schemas.
-Save the stable database ID. Declare the app's schemas on that database, and
-name the same id in the `database` field of each LastDB read and write.
+Save the stable database ID. Place each schema with the `declare_schema`
+action of `POST /v1/x/databases`. The schema name is `{app id}/{Name}` and
+it is in that app's write list. Name the same database id in the `database`
+field of each LastDB read and write.
 LastDB limits the app by the schemas it declared, not by database. For
 standard album and comment schemas, use the setup below.
 
@@ -86,11 +88,10 @@ const trip = page.records?.[0];
 ```
 
 A change to that received database is not a write. `@lastdb/app-sdk`'s
-`submitProposal` posts one mutation document to
-`POST /api/databases/{id}/submissions` with the proposal id in
-`Idempotency-Key`. The call does not write a record locally. Show the change
-as pending from `getShareSubmissionStatus` until the publisher accepts it.
-`POST /v1/write` to a received database is refused.
+`submitProposal` posts `POST /v1/x/databases` with `"action": "submit"`.
+The proposal id is `idempotency_key`. The call does not write a record
+locally. Show the change as pending from `getShareSubmissionStatus` until
+the publisher accepts it. `POST /v1/write` to a received database is refused.
 
 Use the same id in the `database` field when another app reads this share on
 Ana's device. The owner can manage access in Social or revoke a recipient with
@@ -136,7 +137,7 @@ proposal.
 ## Use a named database setup
 
 Social can provision **shared-albums** version 1 with the standard
-`social/Album`, `social/AlbumItem`, `social/Photo`, and `social/Comment`
+`social-graph/Album`, `social-graph/AlbumItem`, `social-graph/Photo`, and `social-graph/Comment`
 schemas. The owner chooses a local name for provisioning. Other apps open the
 selected database by its stable ID and get the verified definitions. Record
 reads and writes then name that id in `database`.
@@ -149,7 +150,7 @@ const verified = await social.setupDatabase({
   setupName: 'shared-albums', requiredVersion: 1, databaseId: created.databaseId,
 });
 const albums = root.select(verified.databaseId);
-albums.rememberDefinition('social/Album', verified.definitions['social/Album']!);
+albums.rememberDefinition('social-graph/Album', verified.definitions['social-graph/Album']!);
 ```
 
 Verification by ID also works on a received share once it has synced its

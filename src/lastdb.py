@@ -1,14 +1,13 @@
 """Social's connection to a local LastDB.
 
-Record reads and writes use the app API, `POST /v1/read` and `POST /v1/write`.
-The installer places the schemas in `lastdb-app.json`. Social does not declare
-them while it runs.
+Record reads and writes use `POST /v1/read` and `POST /v1/write`. Named
+databases and sharing use `POST /v1/x/databases`. The installer places the
+schemas in `lastdb-app.json`. Social does not declare those while it runs.
 
 The launcher sets `LASTDB_SOCKET_PATH` to the app socket and `LASTDB_APP` to
-the app id. The app id is sent as `X-LastDB-App` on app API calls. Without
-them, Social uses the owner socket `<home>/data/folddb.sock`, which serves
-the same two routes and gets no app id header. Sharing, database, invitation,
-and schema-catalog calls stay on `/api/...`: the app API has no route for them.
+the app id. The app id is sent as `X-LastDB-App` on `/v1/` calls. Without
+them, Social uses the owner socket `<home>/data/folddb.sock` and sends no app
+id header. `declare_schema` then includes `app_id`.
 """
 
 from __future__ import annotations
@@ -111,7 +110,6 @@ class LastDB:
         self.socket = Path(configured) if configured else self.home / "data" / "folddb.sock"
         self.executable = Path(executable).resolve()
         self.app_id = os.environ.get("LASTDB_APP")
-        self.capabilities = None
 
     def state_dir(self):
         """Social's own files. The launcher names this directory in LASTDB_APP_DATA."""
@@ -122,7 +120,7 @@ class LastDB:
         root = os.environ.get("LASTDB_APP_DATA")
         return tempfile.TemporaryDirectory(prefix="social-contact-", dir=root or None)
 
-    def call(self, method, path, body=None, *, request_id=None, expect_ok=True):
+    def call(self, method, path, body=None, *, request_id=None, expect_ok=True, statuses=(200,)):
         payload = None if body is None else json.dumps(body, separators=(",", ":")).encode()
         headers = {"X-LastDB-Client": "social", "Content-Type": "application/json"}
         if request_id is not None:
@@ -140,9 +138,20 @@ class LastDB:
             result = json.loads(raw)
         except (ValueError, UnicodeError):
             result = raw.decode(errors="replace").strip()
-        if status != 200 or not isinstance(result, dict) or (expect_ok and result.get("ok") is not True):
+        if status not in statuses or not isinstance(result, dict) or (expect_ok and result.get("ok") is not True):
             raise LastDBError(method, path, status, result)
         return result
+
+    def databases(self, action, **fields):
+        """One `POST /v1/x/databases` action. A refusal becomes LastDBError.
+
+        `request_id` is the Idempotency-Key header. `create` forwards it.
+        Success is the owner route's JSON, including HTTP 202 from `submit`.
+        """
+        request_id = fields.pop("request_id", None)
+        body = {"action": action}
+        body.update({key: value for key, value in fields.items() if value is not None})
+        return self.call("POST", "/v1/x/databases", body, request_id=request_id, statuses=(200, 202))
 
     def read(self, reads):
         if not 1 <= len(reads) <= 64:
@@ -189,23 +198,14 @@ class LastDB:
         return {"revision": written["revisions"][0]}
 
     def command(self, *arguments):
+        # `share contact` and `share verify-contact` read the data directory
+        # and do not open a socket. The program name is `lastdb`, so the
+        # launcher does not intercept this child.
         command = [str(self.executable), "--data-dir", str(self.home), *arguments]
         result = subprocess.run(command, capture_output=True, text=True, timeout=20)
         if result.returncode:
             raise SocialError(result.stderr.strip() or f"LastDB {arguments[0]} failed")
         return json.loads(result.stdout)
-
-    def supports(self, capability):
-        if self.capabilities is None:
-            self.capabilities = self.call("GET", "/api/version").get("capabilities", {})
-        return self.capabilities.get(capability) is True
-
-    def require_named_grants(self):
-        if not self.supports("named_schema_write_grants_v1"):
-            raise SocialError("circles need a LastDB build with grants by schema name")
-
-    def can_retry_database_create(self):
-        return self.supports("whole_database_create_retry_v1")
 
     def verify_contact(self, path, expected_key):
         return self.command("share", "verify-contact", str(path), "--recipient-key", expected_key)

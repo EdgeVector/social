@@ -1,6 +1,6 @@
 {
   "app_id": "social-graph",
-  "version": "0.11.0",
+  "version": "0.12.0",
   "source": "https://github.com/EdgeVector/social.git",
   "audience": "public",
   "metadata": {
@@ -279,9 +279,13 @@
       "social-graph/CirclePolicy",
       "social-graph/SharingRequest",
       "social-graph/PendingSharingRequest",
-      "social-graph/DatabaseSetup"
+      "social-graph/DatabaseSetup",
+      "social-graph/Album",
+      "social-graph/AlbumItem",
+      "social-graph/Photo",
+      "social-graph/Comment"
     ],
-    "extensions": []
+    "extensions": ["databases"]
   },
   "install": {
     "links": [

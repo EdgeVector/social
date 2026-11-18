@@ -1,7 +1,7 @@
 {
-  "app_id": "social",
+  "app_id": "social-graph",
   "schema": {
-    "name": "AlbumItem",
+    "name": "social-graph/AlbumItem",
     "descriptive_name": "Album item",
     "purpose_statement": "One photo placed in one album.",
     "schema_type": "HashRange",

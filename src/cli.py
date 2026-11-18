@@ -86,7 +86,7 @@ COMMANDS = {
     "pick-database": ("List databases an app can use, or select one by ID", (
         flag("--spec", required=True), flag("--version", required=True, type=int),
         flag("--intent", required=True, choices=("read", "write")), flag("--database", help="Exact database ID"))),
-    "check": ("Check the running LastDB for Social compatibility", ()),
+    "check": ("Report that the Social command started", ()),
 }
 
 

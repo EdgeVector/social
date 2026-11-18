@@ -29,12 +29,10 @@ class Sharing:
 
     def create(self, name, whole=False, *, request_id=None):
         policy = {"sharingMode": "whole_database"} if whole else {"spec": SPEC}
-        return self.node.call("POST", "/api/databases", {
-            "name": name, "kind": "shareable", **policy,
-        }, request_id=request_id)["database"]
+        return self.node.databases("create", name=name, kind="shareable", request_id=request_id, **policy)["database"]
 
     def databases(self):
-        return self.node.call("GET", "/api/databases")["databases"]
+        return self.node.databases("list")["databases"]
 
     def owned(self, selector):
         matches = [row for row in self.databases()
@@ -44,7 +42,7 @@ class Sharing:
         return matches[0]
 
     def configuration(self, database_id):
-        reply = self.node.call("GET", self.config_path(database_id))
+        reply = self.node.databases("share_config", database=database_id)
         if reply["databaseId"] != database_id:
             raise SocialError("LastDB returned the configuration of a different database")
         return {key: reply[key] for key in ("databaseId", "revision", "members")}
@@ -62,16 +60,10 @@ class Sharing:
         try:
             config = self.configuration(database_id)
         except LastDBError as error:
-            if error.code == "share_update_pending":
-                return {**row, "status": "pending"}
             return {**row, "status": "unavailable", "httpStatus": error.status}
         except TRANSPORT_ERRORS:
             return {**row, "status": "unavailable"}
         return {**row, **config}
-
-    @staticmethod
-    def config_path(database_id):
-        return f"/api/databases/{database_id}/share/config"
 
     def update_member(self, database_id, node_key, active):
         starting_member = UNREAD
@@ -150,12 +142,16 @@ class Sharing:
         try:
             revision = self.apply(database_id, request)
         except LastDBError as error:
-            if error.code != "share_revision_conflict" and error.status not in (400, 403, 404):
+            # 409 is the share revision conflict. The extension reports it as
+            # `conflict`, with the message that the configuration is at another
+            # revision. 400, 403, and 404 are final refusals.
+            if error.status == 409:
+                self.clear_update(database_id, saved)
+                return None
+            if error.status not in (400, 403, 404):
                 raise
             self.clear_update(database_id, saved)
-            if error.code != "share_revision_conflict":
-                raise
-            return None
+            raise
         if "circles" in request:
             from circles import store_policy
             store_policy(self.node, database_id, request["circles"])
@@ -170,11 +166,10 @@ class Sharing:
                 raise
 
     def apply(self, database_id, update):
-        path = self.config_path(database_id)
         wire = {key: update[key] for key in ("expectedRevision", "requestId", "members")}
         for attempt in range(3):
             try:
-                ack = self.node.call("PUT", path, wire)
+                ack = self.node.databases("set_share_config", database=database_id, config=wire)
             except (LastDBError, *TRANSPORT_ERRORS) as error:
                 if isinstance(error, LastDBError) and error.status != 503:
                     raise
@@ -206,9 +201,8 @@ class Sharing:
         return self.seal(database_id, node_key, contact_code, revision, publisher)
 
     def seal(self, database_id, node_key, contact_code, revision, publisher):
-        response = self.node.call("POST", f"/api/databases/{database_id}/invitations", {
-            "contactCode": contact_code, "expectedNodeKey": node_key,
-        })
+        response = self.node.databases(
+            "invite", database=database_id, contactCode=contact_code, expectedNodeKey=node_key)
         if response["databaseId"] != database_id or not response.get("invitation"):
             raise SocialError("LastDB returned a mismatched invitation")
         return {"databaseId": database_id, "revision": revision, "publisher": publisher,
@@ -217,10 +211,9 @@ class Sharing:
     def accept(self, receipt, publisher, name):
         if receipt.get("publisher") != publisher:
             raise SocialError("invitation publisher differs from the trusted publisher")
-        return self.node.call("POST", "/api/databases/accept", {
-            "invitation": receipt["invitation"], "publisher": publisher,
-            "database_id": receipt["databaseId"], "name": name,
-        })["database"]
+        return self.node.databases(
+            "accept", invitation=receipt["invitation"], publisher=publisher,
+            database_id=receipt["databaseId"], name=name)["database"]
 
 
 def read_invitation(stream):

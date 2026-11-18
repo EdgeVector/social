@@ -32,7 +32,7 @@ class Circles:
         self.sharing = sharing
 
     def schemas(self, database):
-        rows = self.node.call("GET", f"/api/databases/{database}/schemas?include_definition_ids=1")
+        rows = self.node.databases("schemas", database=database, include_definition_ids=True)
         return {row["name"]: row["definition_id"] for row in rows["schemas"]
                 if row.get("definition_id") and row.get("state") == "Available"}
 

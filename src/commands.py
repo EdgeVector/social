@@ -1,7 +1,6 @@
 """Map each `social NOUN VERB` command to its owner operation."""
 
 import json
-import os
 import sys
 
 import changes
@@ -137,10 +136,7 @@ def pick_database(app, args):
     return app.pick(spec, args.intent, args.database) if args.database else app.picker(spec, args.intent)
 
 
-def check(app, _args):
-    # GET /api/version is an owner route. The install probe uses the app socket.
-    if not os.environ.get("LASTDB_SOCKET_PATH"):
-        app.node.call("GET", "/api/version")
+def check(_app, _args):
     return {"ready": True}
 
 

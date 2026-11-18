@@ -41,8 +41,10 @@ class Setups:
         finish = args.get("finishExisting") is True
         if finish and selector != "databaseId":
             raise SocialError("select an owned database by ID to finish setup")
-        definitions = {f"social/{name}": json.loads((CATALOG / f"{name}.json").read_text())
-                       for name in ALBUM_SCHEMAS}
+        definitions = {}
+        for name in ALBUM_SCHEMAS:
+            request = json.loads((CATALOG / f"{name}.json").read_text())
+            definitions[request["schema"]["name"]] = request
         if selector == "databaseId":
             database = self.database(value)
             if finish:
@@ -75,8 +77,6 @@ class Setups:
         if existing or saved["fields"]["ready"]:
             database = existing or self.database(database_id)
         else:
-            if not self.node.can_retry_database_create():
-                raise SocialError("resume setup using LastDB with retryable whole-database creation")
             database = self.sharing.create(name, whole=True, request_id=database_id)
         if database["id"] != database_id or database["kind"] != "shareable":
             raise SocialError("this setup belongs to an owned database")
@@ -99,8 +99,6 @@ class Setups:
 
     def reserve(self, name, key, existing):
         if existing is None:
-            if not self.node.can_retry_database_create():
-                raise SocialError("creating a setup needs LastDB with retryable whole-database creation")
             if any(row.get("name") == name for row in self.sharing.databases()):
                 raise SocialError("that name is already in use; select the owned database by ID to finish setup")
         fields = {"database_id": existing["id"] if existing else str(uuid4()), "ready": False}
@@ -117,7 +115,7 @@ class Setups:
 
     def install(self, database_id, request):
         try:
-            self.node.call("POST", f"/api/databases/{database_id}/apps/declare-schema", request)
+            self.node.databases("declare_schema", **declaration(self.node, database_id, request))
         except LastDBError as error:
             if error.status != 409:
                 raise
@@ -125,8 +123,9 @@ class Setups:
             # what actually exists before declaring this setup ready.
 
     def verify(self, database_id, definitions, *, allow_missing=False):
-        path = f"/api/databases/{database_id}/schemas?include_full=1&include_definition_ids=1"
-        rows = {row["name"]: row for row in self.node.call("GET", path)["schemas"]}
+        listed = self.node.databases(
+            "schemas", database=database_id, include_full=True, include_definition_ids=True)
+        rows = {row["name"]: row for row in listed["schemas"]}
         verified = {}
         for name, request in definitions.items():
             row = rows.get(name)
@@ -136,6 +135,16 @@ class Setups:
                 raise SocialError(f"{name} does not match the shared-albums version 1 setup")
             verified[name] = row["definition_id"]
         return verified
+
+
+def declaration(node, database_id, request):
+    """The declare_schema body. The app socket rejects app_id; the owner socket requires it."""
+    body = {"database": database_id, "schema": request["schema"]}
+    if "retention" in request:
+        body["retention"] = request["retention"]
+    if not node.app_id:
+        body["app_id"] = request["app_id"]
+    return body
 
 
 def matches(row, request):

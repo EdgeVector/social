@@ -16,13 +16,16 @@ from support import OperationError, decode_json, require, retry, run_operation, 
 SCOPE = {"name": "whole-database", "version": 1}
 ALBUM = "dev-albums/Album"
 COMMENT = "dev-comments/Comment"
+# LastDB applies comment authorship only to this schema name.
 STANDARD_COMMENT = "social/Comment"
 COMMENT_GRANT = {"names": [COMMENT, STANDARD_COMMENT]}
 REFUSALS = (
     ("select writable schemas", "circle_invalid_schema_selection"),
     ("save verified contacts", "circle_contact_unavailable"),
+    ("share configuration is not confirmed", "circle_lastdb_unconfirmed"),
     ("share_configuration_unconfirmed", "circle_lastdb_unconfirmed"),
     ("invalid_share_configuration", "circle_lastdb_rejected_config"),
+    ("the share configuration is at another revision", "circle_revision_changed"),
     ("share_update_pending", "circle_update_pending"),
     ("mismatched sharing acknowledgement", "circle_ack_mismatch"),
     ("changed while you edited", "circle_revision_changed"),
@@ -61,6 +64,7 @@ def wait_text(node, database, schema, key, text, stage):
 
 
 def submit(node, database, update, *, mutation_id=None):
+    # The member submits on the owner socket. This is not a Social command.
     mutation_id = mutation_id or str(uuid.uuid4())
     with closing(Connection(node.socket)) as connection:
         connection.request("POST", f"/api/databases/{database}/submissions", json.dumps(update), {
@@ -86,9 +90,13 @@ def transfer(programs, root, publisher, recipient, api_key):
     report(f"Owned DEV mutation log {database} for {name} through the packaged SDK.")
     second = create_database(publisher, f"{name}-second")
     definitions = {schema: declare(publisher, database, schema) for schema in (ALBUM, COMMENT)}
-    definition = SETUP / "Comment.json"
+    # The owner places the schema LastDB treats as the standard comment.
+    # Social's catalog name is social-graph/Comment, which does not get that rule.
+    definition = json.loads((SETUP / "Comment.json").read_text())
+    definition["app_id"] = "social"
+    definition["schema"]["name"] = STANDARD_COMMENT
     definitions[STANDARD_COMMENT] = publisher.call(
-        f"/api/databases/{database}/apps/declare-schema", json.loads(definition.read_text())
+        f"/api/databases/{database}/apps/declare-schema", definition
     )["definition_id"]
     write_owned(publisher, database, *(
         mutation(schema, definitions[schema], "seed", f"Initial {schema}") for schema in (ALBUM, COMMENT)))

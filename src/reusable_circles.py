@@ -39,7 +39,6 @@ class ReusableCircles:
             return {**self.edit_locked({**args, "token": preview["token"]}, apply=True), "applied": True}
 
     def edit_locked(self, args, *, apply=False, operation=None, remove_request=None):
-        self.node.require_named_grants()
         directory = self.load()
         prior, pending = directory.circles, set(directory.pending)
         retrying = "circle" not in args and operation is None

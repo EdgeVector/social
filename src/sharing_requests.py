@@ -19,8 +19,8 @@ OWNER_CHANGES = uuid5(NAMESPACE_URL, "social-graph/owner-change")
 APP_ID = re.compile(r"[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}\Z")
 PRESETS = {
     "viewer": [],
-    "commenter": ["social/Comment"],
-    "album-organizer": ["social/Album", "social/AlbumItem"],
+    "commenter": ["social-graph/Comment"],
+    "album-organizer": ["social-graph/Album", "social-graph/AlbumItem"],
 }
 
 

@@ -2,11 +2,38 @@
 
 Social remembers verified contacts in the local personal database and manages
 access to owned named LastDB databases set up for sharing. It is a command-line
-tool. Private records use the LastDB app API. The installer places the schemas
-in `lastdb-app.json`; Social does not declare them while it runs. Sharing still
-uses the owner socket of the selected home. Use Python 3.9 or
-later and the LastDB client and daemon from the same build. The publisher needs
-a connected ExeMem account.
+tool. Use Python 3.9 or later and the LastDB client and daemon from the same
+build. The publisher needs a connected ExeMem account.
+
+## How Social talks to LastDB
+
+The LastDB launcher starts an installed Social command. It sets
+`LASTDB_SOCKET_PATH` to the app socket (`<home>/data/apps.sock`) and
+`LASTDB_APP` to `social-graph`. Social sends that id as `X-LastDB-App`.
+
+Private records use `POST /v1/read` and `POST /v1/write`. The installer places
+the schemas in `lastdb-app.json`. Social does not declare those while it runs.
+
+Named databases and sharing use one call, `POST /v1/x/databases`. The manifest
+lists the extension `databases`. The JSON body carries `action`:
+
+| Action | What Social uses it for |
+| --- | --- |
+| `list`, `create`, `accept` | List databases, create one, accept an invitation |
+| `schemas`, `declare_schema` | Read a database's schemas, place a setup schema |
+| `share_config`, `set_share_config` | Read and update the roster |
+| `invite` | Seal an invitation |
+| `submit`, `submission_status` | A content app submits one proposal and reads its state. Social's own commands do not call these |
+
+On the app socket, `declare_schema` does not send `app_id`. The schema name
+must be `{app id}/{name}` and that name must be in the app's write list. The
+shared-albums names are `social-graph/Album`, `social-graph/AlbumItem`,
+`social-graph/Photo`, and `social-graph/Comment`. The same call works on the
+owner socket with no app header. `declare_schema` then includes `app_id`.
+
+`social` runs `lastdb share contact` and `lastdb share verify-contact` to
+check a contact file. Those commands read `--data-dir` and do not open a
+socket, so the app socket does not affect them.
 
 ```sh
 social --data-dir "$lastdb_home" COMMAND ...
@@ -35,7 +62,7 @@ error prints one `social:` line on standard error and exits non-zero.
 | `request submit`, `request status ID` | For apps: propose a sharing change, read its outcome |
 | `request list`, `request show ID`, `request approve ID`, `request decline ID` | For the owner: review and decide app proposals |
 | `pick-database --spec NAME --version N --intent read\|write` | List the databases an app can use, or select one |
-| `check` | Check the running LastDB for Social compatibility |
+| `check` | Report that the Social command started |
 
 `PERSON` is a saved contact's name, or a node key. `DB` is a database name or
 ID. `CIRCLE` is a circle name or ID.
@@ -46,8 +73,8 @@ ID. `CIRCLE` is a circle name or ID.
 change who can reach a database. Without `--apply` they print what would change and change nothing.
 
 ```sh
-social circle set Family --members Ana,Bea --link family=social/Comment
-social circle set Family --members Ana,Bea --link family=social/Comment --apply
+social circle set Family --members Ana,Bea --link family=social-graph/Comment
+social circle set Family --members Ana,Bea --link family=social-graph/Comment --apply
 ```
 
 A preview includes a `token`. Pass `--apply --token TOKEN` to make the change
@@ -77,22 +104,22 @@ social person add Ana --node-key "$ana_key" --contact ana.contact
 ## Whole-database sharing
 
 `social db create NAME` creates an empty share for your app's own schemas.
-Place each schema on the owner socket with
-`POST /api/databases/{id}/apps/declare-schema`. The body has `app_id` and
-`schema`. `schema.name` is the canonical name, such as `social/Comment`, or a
-bare name that LastDB places under `app_id`. Put keys in `record_keys`. The
-route refuses a schema-level `key`. `retention`, when present, sits beside
-`schema`. Then link a circle to the database.
+Place each schema with `POST /v1/x/databases` and `"action": "declare_schema"`.
+On the app socket the body has `database`, `schema`, and optional `retention`
+and `intent`. It has no `app_id`. `schema.name` is the canonical name, such
+as `social-graph/Comment`. Put keys in `record_keys`. The route refuses a
+schema-level `key`. `retention` sits beside `schema`, not inside it. Then
+link a circle to the database.
 
 A circle is one list of people with links to any number of databases. Each
 link carries a write scope: `read`, `all`, or a comma-separated list of
-canonical schema names such as `social/Comment`. Every member can read each
+canonical schema names such as `social-graph/Comment`. Every member can read each
 whole database. Write access combines across overlapping circles. `all` also
 covers future schemas. An explicit revoke on a database stays in effect
 across later circle edits.
 
 ```sh
-social circle set Family --members Ana,Bea --link family=social/Comment --link trips=read --apply
+social circle set Family --members Ana,Bea --link family=social-graph/Comment --link trips=read --apply
 social invite family Ana --out ana-invitation.json
 ```
 
@@ -101,7 +128,7 @@ person's circle grants. A revoked person comes back only through an explicit
 `grant restore`.
 
 ```sh
-social grant set family Cal --write social/Comment --apply
+social grant set family Cal --write social-graph/Comment --apply
 social grant revoke family Cal --apply
 social grant restore family Cal --write read --apply
 ```
@@ -122,15 +149,17 @@ and downloaded record readiness separately.
 
 Compatible schema upgrades keep a grant in place. The publisher still checks
 the specific current definition and the record rules for each write. On a
-whole-database share, a receiver with a `social/Comment` write grant can
-create comments and edit comments they created. The publisher can edit or
-delete any comment.
+whole-database share, LastDB applies comment authorship only to the schema
+named `social/Comment`. A receiver with that write grant can create comments
+and edit comments they created. The publisher can edit or delete any comment.
+The shared-albums catalog schema is `social-graph/Comment`. That rule does
+not apply to it.
 
 ### Named setups
 
 `social db create family --setup shared-albums` creates a whole-database share
 and places the catalog definitions for Album, AlbumItem, Photo, and Comment
-through `POST /api/databases/{id}/apps/declare-schema`. Social records the new
+through the `declare_schema` action. Social records the new
 database ID before placing those schemas, and resumes setup by the same name. `social db verify ID --setup shared-albums`
 checks an owned or received share by its stable ID and reports the current
 definition IDs. Add `--finish` to install missing schemas in an owned
@@ -193,10 +222,9 @@ until LastDB confirms the result or definitively rejects it.
 ## How sharing works
 
 Every active receiver can send an encrypted change to the pending mutation
-log. The receiver posts one mutation document to
-`POST /api/databases/{id}/submissions` on its owner socket. The proposal id
-is the `Idempotency-Key` header: one non-nil UUID. The call answers 202
-with `ok`, `status: submitted`,
+log. The receiver posts `POST /v1/x/databases` with `"action": "submit"`,
+the database id, the mutation document, and `idempotency_key` (one non-nil
+lowercase UUID). The call answers 202 with `ok`, `status: submitted`,
 `mutation_id`, and `submission_sequence`. It does not write a record on the
 receiver. An owned database or an unknown id answers 404. A share that is not
 a whole database answers 403. Only the publisher's LastDB can read pending
@@ -204,8 +232,8 @@ changes. It checks each one against the current schema permissions and record
 rules, discards refusals, and uploads accepted changes to the separate
 published log. Receivers follow that log and can read the resulting record
 after it syncs, with `POST /v1/read` and the `database` field. An app that
-wants to show the sender's own change before the publisher accepts it reads
-`POST /api/databases/{id}/submissions/status` and shows that pending state.
+wants to show the sender's own change before the publisher accepts it uses
+`"action": "submission_status"` and shows that pending state.
 `POST /v1/write` to a received database is refused: the database is read only.
 [How sharing works](https://github.com/EdgeVector/lastdb/blob/main/docs/designs/shared-database-mutation-logs.md)
 
@@ -236,13 +264,18 @@ Every push to `main` then runs `.github/workflows/dev-sharing.yml`. It also
 runs daily at 09:23 UTC, after the LastDB nightly is published, and can be
 dispatched by hand. Each mode starts two fresh LastDB nodes on the
 runner, a publisher and a recipient, from the newest published LastDB nightly,
-connects them to the DEV cloud, and drives this commit's `social` command:
+connects them to the DEV cloud, and drives this commit's `social` command
+through the launcher, on the app socket, with `social-graph` registered:
 
 | Mode | What it proves |
 | --- | --- |
 | `social-share` | Save a contact, set up `shared-albums`, invite, accept, read, revoke and regrant on a filtered share, with two scoped content clients |
 | `social-circles` | Circles with per-database write scopes, allowed and refused writes, app sharing requests, grants changed outside Social, direct grant, revoke and restore |
 | `social-prepare` | The manifest and schemas produce a valid unsigned registry declaration for this commit on a fresh node |
+
+Where a recipe is the node owner, it keeps the owner socket. That is schema
+placement, roster reads and writes, a member's proposal, cloud backup, and
+node health. Social's own commands do not use those routes.
 
 The recipes are in `ci/`, and the node helpers they use are in `ci/lib/`.
 Two things come from `EdgeVector/lastdb`: the endpoint profile

@@ -4,7 +4,9 @@ Social is the command-line address book and sharing settings for LastDB. It
 moved here from `EdgeVector/lastdb` (`apps/social`) on 2026-11-16.
 
 - `src/social` is the entrypoint. `src/cli.py` holds the command grammar,
-  `src/commands.py` maps each command to an owner operation.
+  `src/commands.py` maps each command to an operation. Database and sharing
+  calls use `POST /v1/x/databases`. Record calls use `POST /v1/read` and
+  `POST /v1/write`.
 - `ci/` holds the DEV sharing recipes run by `dev-sharing.yml`.
 - `lastdb-app.json` is the app manifest and the source of Social's private
   schema definitions. The installer places those schemas. Social does not
@@ -25,7 +27,8 @@ moved here from `EdgeVector/lastdb` (`apps/social`) on 2026-11-16.
   dispatch, never on a pull request. The recipes
   are in `ci/`. They start two fresh LastDB nodes from a published LastDB
   nightly, connect them to the DEV cloud, and drive this commit's `social`
-  command. A change that alters command output or behaviour must update
+  command through the launcher on the app socket. A step that sets up the
+  node keeps the owner socket. A change that alters command output or behaviour must update
   the recipes in the same PR.
 - A registry listing is tied to one exact LastDB API version. `social-prepare`
   fails when the DEV `next` list has no Social entry for the nightly's API

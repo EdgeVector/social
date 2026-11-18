@@ -15,6 +15,8 @@ ROOT = Path(__file__).resolve().parents[1]
 SETUP = ROOT / "setups/shared-albums-v1"
 SPEC = {"name": "social", "version": 1}
 GROUPS = ("person", "circle", "db", "grant", "request")
+APP = "social-graph"
+RECEIPT = "lastdb-app-install.json"
 
 
 def lastdb_source():
@@ -24,10 +26,80 @@ def lastdb_source():
     return Path(path)
 
 
+def apps_dir(node):
+    return node.home.parent / "apps"
+
+
+def prepare_launcher(node):
+    """Lay out the launcher tree and register social-graph on this node."""
+    apps = apps_dir(node)
+    current = apps / APP / "current"
+    if not (current / RECEIPT).is_file():
+        write_launcher_receipt(current)
+    link = apps / "bin" / "social"
+    if not link.is_symlink():
+        link.parent.mkdir(parents=True, mode=0o700)
+        link.symlink_to(node.programs.directory / "lastdb")
+    if not getattr(node, "social_registered", False):
+        register_social(node, apps)
+        node.social_registered = True
+    return link
+
+
+def write_launcher_receipt(current):
+    current.mkdir(parents=True, mode=0o700)
+    source = current / "source"
+    if not source.exists():
+        source.symlink_to(ROOT)
+    manifest = json.loads((ROOT / "lastdb-app.json").read_text(encoding="utf-8"))
+    blank = "0" * 40
+    listing = {
+        "app_id": APP, "channel": "next", "app_version": manifest["version"],
+        "source": manifest["source"], "sha": blank, "api_version": 1, "lastdb_build": "ci",
+        "publisher_account": "0" * 32, "publisher_key": "ci", "publisher_sig": "ci",
+        "status": "listed", "published_at": "2026-11-18T00:00:00Z",
+        "access": {"read": "*", "write": "*", "extensions": ["databases"]},
+    }
+    receipt = {
+        "app_id": APP, "sha": blank, "version": manifest["version"], "channel": "next",
+        "index": "ci", "trust": "ci", "publisher": "ci", "consent_hash": "0" * 64,
+        "inactive": False, "installed_at": "2026-11-18T00:00:00Z", "listing": listing,
+    }
+    (current / RECEIPT).write_text(json.dumps(receipt), encoding="utf-8")
+
+
+def register_social(node, apps):
+    manifest_path = apps / APP / "current" / "source" / "lastdb-app.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    data = apps / APP / "data"
+    data.mkdir(parents=True, mode=0o700)
+    (data / "tmp").mkdir(mode=0o700, exist_ok=True)
+    access = manifest["access"]
+    reply = node.call("/api/apps/register", {
+        "app": APP,
+        "access": {"read": access["read"], "write": access["write"], "extensions": access["extensions"]},
+        "data": str(data.resolve()),
+    })
+    require(reply.get("app") == APP, "social_app_register")
+
+
 def command(node):
-    # This checkout is the Social under test, unless a signed install replaced it.
-    entrypoint = node.programs.environment.get("SOCIAL_COMMAND") or str(ROOT / "src/social")
-    return [entrypoint, "--data-dir", str(node.home), "--lastdb", str(node.programs.directory / "lastdb")]
+    """The `social` command, which is the launcher. It is not src/social itself.
+
+    The launcher reads the node home from LASTDB_HOME before it sees --data-dir.
+    A signed install keeps its own receipt. This still registers the app on the
+    node that is about to run the command.
+    """
+    link = prepare_launcher(node)
+    lastdb = str(node.programs.directory / "lastdb")
+    return [str(link), "--data-dir", str(node.home), "--lastdb", lastdb]
+
+
+def launcher_env(node):
+    env = dict(node.programs.environment)
+    env["LASTDB_APPS_ROOT"] = str(apps_dir(node))
+    env["LASTDB_HOME"] = str(node.home)
+    return env
 
 
 def sdk(node, action, **body):
@@ -36,7 +108,7 @@ def sdk(node, action, **body):
             "lastdb_app_sdk_missing")
     result = subprocess.run(
         ["node", str(ROOT / "ci/social_sdk.mjs"), action, *command(node)],
-        input=json.dumps(body).encode(), capture_output=True, env=node.programs.environment, timeout=190,
+        input=json.dumps(body).encode(), capture_output=True, env=launcher_env(node), timeout=190,
     )
     require(result.returncode == 0, f"social_sdk_{action}")
     return decode_json(result.stdout)
@@ -47,6 +119,11 @@ def install(publisher, root, revision):
     require(len(revision) == 40 and all(char in "0123456789abcdef" for char in revision), "social_install_revision")
     home = root / "os-home"
     home.mkdir(mode=0o700)
+    # The installer points the social command at this lastdb program.
+    launcher = home / ".local/bin/lastdb"
+    launcher.parent.mkdir(parents=True, exist_ok=True)
+    if not launcher.exists():
+        launcher.symlink_to(programs.directory / "lastdb")
     extra = {"HOME": str(home), "LASTDB_APPS_ROOT": str(root / "apps"),
              "PATH": f"{programs.directory}:{os.environ['PATH']}"}
     catalog = programs.environment.get("SOCIAL_INSTALL_REGISTRY") or "dev"
@@ -58,11 +135,12 @@ def install(publisher, root, revision):
     ], extra=extra, timeout=150)
     require(isinstance(receipt, list) and len(receipt) == 1 and receipt[0]["sha"] == revision,
             "social_install_exact_source")
+    # A restricted app's command link points at the lastdb program. Called as
+    # `social`, that program is the launcher.
     link = home / ".local/bin/social"
-    managed = root / "apps/social-graph/current/source/src/social"
-    require(link.is_symlink() and link.resolve(strict=True) == managed.resolve(strict=True), "social_install_command")
-    programs.environment["SOCIAL_COMMAND"] = str(link)
-    summary(f"Installed Social from the signed {catalog.upper()} registry at `{revision}` and used its managed command link.")
+    require(link.is_symlink() and os.readlink(link) == str(launcher), "social_install_command")
+    summary(f"Installed Social from the signed {catalog.upper()} registry at `{revision}`. "
+            "Recipes start that install through the launcher.")
 
 
 def social(node, *arguments, stdin=None, refusal=None, refusals=()):
@@ -71,7 +149,7 @@ def social(node, *arguments, stdin=None, refusal=None, refusals=()):
     try:
         result = subprocess.run([*command(node), *arguments],
                                 input=None if stdin is None else json.dumps(stdin).encode(),
-                                capture_output=True, env=node.programs.environment, timeout=180)
+                                capture_output=True, env=launcher_env(node), timeout=180)
     except subprocess.TimeoutExpired as error:
         raise OperationError(f"social_{label}_deadline") from error
     if refusal is not None:
@@ -147,8 +225,8 @@ def write_owned(node, database, *updates):
     """Write records in a database this node owns.
 
     POST /v1/write takes op, key, record, and revision. It has no definition
-    id, source file name, or metadata. A received database is not this route:
-    a proposal is POST /api/databases/{id}/submissions.
+    id, source file name, or metadata. A received database is not this route.
+    A member proposal is the databases action submit. This helper is the owner write.
     """
     mutations = [owned_item(database, update) for update in updates]
     reply = node.call("/v1/write", {"mutations": mutations})
@@ -178,11 +256,11 @@ def open_content_apps(recipient, database):
     selections = [(name, pick(recipient, SPEC, "read", database)) for name in ("album-viewer", "photo-journal")]
     require(all(selection["databaseId"] == database and selection["spec"] == SPEC
                 for _, selection in selections), "social_picker_shared_database")
-    refused = {"database": database, "schema": "social/Album", "op": "create",
+    refused = {"database": database, "schema": "social-graph/Album", "op": "create",
                "key": {"hash": "album-refused"}, "record": {"title": "refused"}}
     for app, _selection in selections:
         # The personal database is the read that omits database. It is not this share.
-        personal = read_named(recipient, app, "social/Album", "album-0")
+        personal = read_named(recipient, app, "social-graph/Album", "album-0")
         require("records" not in personal or personal["records"] == [], f"social_content_{app}_personal")
         # The roster is an owner route. A received database is not this node's share.
         content(recipient, app, "GET", f"/api/databases/{database}/share/config", status=404)
@@ -199,7 +277,7 @@ def album_records(page):
 def read_album(node, selections, database, key, title=None):
     with ThreadPoolExecutor(max_workers=2) as pool:
         pages = list(pool.map(
-            lambda item: read_named(node, item[0], "social/Album", key, database), selections))
+            lambda item: read_named(node, item[0], "social-graph/Album", key, database), selections))
     if title is None:
         return all(album_records(page) == [] for page in pages)
     return all(album_records(page) and len(album_records(page)) == 1
