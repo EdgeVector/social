@@ -71,8 +71,10 @@ def write_launcher_receipt(current):
 def register_social(node, apps):
     manifest_path = apps / APP / "current" / "source" / "lastdb-app.json"
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    # One recipe puts both nodes under one apps directory. Register still
+    # runs once per node. The directory is already there the second time.
     data = apps / APP / "data"
-    data.mkdir(parents=True, mode=0o700)
+    data.mkdir(parents=True, mode=0o700, exist_ok=True)
     (data / "tmp").mkdir(mode=0o700, exist_ok=True)
     access = manifest["access"]
     reply = node.call("/api/apps/register", {

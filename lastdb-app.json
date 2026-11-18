@@ -279,11 +279,7 @@
       "social-graph/CirclePolicy",
       "social-graph/SharingRequest",
       "social-graph/PendingSharingRequest",
-      "social-graph/DatabaseSetup",
-      "social/Album",
-      "social/AlbumItem",
-      "social/Photo",
-      "social/Comment"
+      "social-graph/DatabaseSetup"
     ],
     "extensions": ["databases"]
   },

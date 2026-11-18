@@ -37,9 +37,9 @@ row Social prints, which is LastDB's own database row; `id` is always present.
 
 Create an empty named whole-database share when your app owns the schemas.
 Save the stable database ID. Place each schema with the `declare_schema`
-action of `POST /v1/x/databases`. The schema name is `{app id}/{Name}` and
-it is in that app's write list. Name the same database id in the `database`
-field of each LastDB read and write.
+action of `POST /v1/x/databases`. The schema name is `{app id}/{Name}`.
+The app declares the `databases` extension. Name the same database id in the
+`database` field of each LastDB read and write.
 LastDB limits the app by the schemas it declared, not by database. For
 standard album and comment schemas, use the setup below.
 

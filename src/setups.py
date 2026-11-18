@@ -140,8 +140,9 @@ class Setups:
 def declaration(database_id, request):
     """The declare_schema body. Both sockets send the catalog app_id.
 
-    The app socket allows that field and compares schema.name with the write
-    list. The catalog name is the stored name, such as social/Album.
+    The catalog name is the stored name, such as social/Album. Social does
+    not list that name in access.write. The databases extension is the grant
+    for this call.
     """
     body = {"database": database_id, "app_id": request["app_id"], "schema": request["schema"]}
     if "retention" in request:

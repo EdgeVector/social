@@ -26,11 +26,11 @@ lists the extension `databases`. The JSON body carries `action`:
 | `submit`, `submission_status` | A content app submits one proposal and reads its state. Social's own commands do not call these |
 
 `declare_schema` sends `app_id` from the catalog on the app socket and on the
-owner socket. The app socket compares `schema.name` with the write list, so
-that field is the stored name. The shared-albums catalog uses `app_id`
-`social` and the names `social/Album`, `social/AlbumItem`, `social/Photo`,
-and `social/Comment`. Those four names are in the write list. LastDB stores
-the same names.
+owner socket. The shared-albums catalog uses `app_id` `social` and the names
+`social/Album`, `social/AlbumItem`, `social/Photo`, and `social/Comment`.
+LastDB stores those names. They are not in `access.read` or `access.write`.
+The read list and the write list are the nine `social-graph` schemas. Placing
+a schema is the `databases` extension.
 
 `social` runs `lastdb share contact` and `lastdb share verify-contact` to
 check a contact file. Those commands read `--data-dir` and do not open a
@@ -107,8 +107,9 @@ social person add Ana --node-key "$ana_key" --contact ana.contact
 `social db create NAME` creates an empty share for your app's own schemas.
 Place each schema with `POST /v1/x/databases` and `"action": "declare_schema"`.
 The body has `database`, `app_id`, `schema`, and optional `retention` and
-`intent`. `schema.name` is the stored name, such as `social/Comment`, and
-that name is in the app's write list. `app_id` is the namespace of that name.
+`intent`. `schema.name` is the stored name, such as `social/Comment`.
+`app_id` is the namespace of that name. The app declares the `databases`
+extension. That name is not an `access.write` entry.
 Put keys in `record_keys`. The route refuses a schema-level `key`.
 `retention` sits beside `schema`, not inside it. Then link a circle to the
 database.
